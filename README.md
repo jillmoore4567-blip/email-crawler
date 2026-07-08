@@ -15,6 +15,11 @@ exports, and a plugin-based extraction framework.
 This project is intended for **authorized asset inventory and
 defensive/security testing workflows only**.
 
+Use is limited to authorized asset inventory and defensive/security
+testing workflows.
+
+Authorized scope: authorized asset inventory and defensive/security testing.
+
 ## Features
 
 - Breadth-first crawling with configurable depth, concurrency, retries,
