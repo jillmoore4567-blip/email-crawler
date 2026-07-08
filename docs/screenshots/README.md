@@ -1,6 +1,7 @@
 # Screenshots
 
-These screenshots are captured from the current release report and kept in this folder for publication assets.
+These screenshots are captured from the current release report and kept
+in this folder for publication assets.
 
 - report-overview.png
 - snapshot-comparison.png

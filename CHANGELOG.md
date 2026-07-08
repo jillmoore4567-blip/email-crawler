@@ -11,7 +11,8 @@ and this project adheres to Semantic Versioning.
 
 ## [1.0.0] - 2026-07-08
 
-First stable release focused on observability, migration safety, packaging quality, and release governance.
+First stable release focused on observability, migration safety,
+packaging quality, and release governance.
 
 ### Added
 
@@ -21,7 +22,9 @@ First stable release focused on observability, migration safety, packaging quali
 - Migration fixture smoke test using a checked-in legacy SQLite database fixture.
 - Documentation synchronization tests to prevent CLI, schema, and docs drift.
 - Benchmark harness and regression gate for throughput, memory, and DB growth.
-- Release-oriented CI stages for lint, type checks, migration tests, docs checks, packaging, install verification, and benchmark regression checks.
+- Release-oriented CI stages for lint, type checks, migration tests,
+  docs checks, packaging, install verification, and benchmark
+  regression checks.
 
 ### Improved
 
@@ -32,21 +35,25 @@ First stable release focused on observability, migration safety, packaging quali
 
 ### Fixed
 
-- Legacy migration coverage now verifies preservation, ordering, idempotency, and latest schema version.
+- Legacy migration coverage now verifies preservation, ordering,
+  idempotency, and latest schema version.
 - Docs checks now catch missing critical CLI options in release documentation.
 - Distribution packaging now explicitly includes SQL migration files.
 
 ### Performance
 
-- Added reproducible benchmark output with throughput and memory telemetry for regression tracking.
+- Added reproducible benchmark output with throughput and memory
+  telemetry for regression tracking.
 
 ### Security
 
-- Project documentation now explicitly scopes usage to authorized defensive/security workflows.
+- Project documentation now explicitly scopes usage to authorized
+  defensive/security workflows.
 
 ### Migration Notes
 
-- Existing legacy databases continue to migrate in-place through the ordered SQL migration chain.
+- Existing legacy databases continue to migrate in-place through the
+  ordered SQL migration chain.
 - Final schema version for this release is 3.
 
 ### Backward Compatibility

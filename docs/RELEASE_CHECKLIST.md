@@ -6,8 +6,11 @@
 - [ ] Lint is clean (`ruff check src tests`).
 - [ ] Staged strict type checks pass (`mypy --config-file mypy.ini`).
 - [ ] Documentation sync tests pass (`pytest -q tests/test_docs_sync.py`).
-- [ ] Migration tests pass (`pytest -q tests/test_storage_history.py tests/test_migration_fixture_smoke.py`).
-- [ ] Benchmark and regression checks pass (`python scripts/benchmark_synthetic.py` and `python scripts/check_benchmark_regression.py`).
+- [ ] Migration tests pass (`pytest -q tests/test_storage_history.py
+  tests/test_migration_fixture_smoke.py`).
+- [ ] Benchmark and regression checks pass (`python
+  scripts/benchmark_synthetic.py` and `python
+  scripts/check_benchmark_regression.py`).
 
 ## Versioning and Notes
 

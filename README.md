@@ -7,18 +7,25 @@
 [![mypy](https://img.shields.io/badge/type%20check-mypy-informational.svg)](https://mypy.readthedocs.io/)
 [![Tests](https://img.shields.io/badge/tests-19%20passing-success.svg)](tests)
 
-A modular Python crawler for authorized asset inventory and security engineering. It supports incremental crawling, SQLite persistence, schema migrations, historical snapshots, HTML reporting, JSON/CSV exports, and a plugin-based extraction framework.
+A modular Python crawler for authorized asset inventory and security
+engineering. It supports incremental crawling, SQLite persistence,
+schema migrations, historical snapshots, HTML reporting, JSON/CSV
+exports, and a plugin-based extraction framework.
 
-This project is intended for **authorized asset inventory and defensive/security testing workflows only**.
+This project is intended for **authorized asset inventory and
+defensive/security testing workflows only**.
 
 ## Features
 
-- Breadth-first crawling with configurable depth, concurrency, retries, and rate limits.
-- Robust output pipeline: HTML dashboard, JSON, CSV, stats JSON, snapshot diff JSON, SQLite.
+- Breadth-first crawling with configurable depth, concurrency, retries,
+  and rate limits.
+- Robust output pipeline: HTML dashboard, JSON, CSV, stats JSON,
+  snapshot diff JSON, SQLite.
 - Incremental crawling and historical snapshot comparison between runs.
 - Plugin registry for extractor composition and extension.
 - Structured telemetry/observability for timing, request behavior, and queue metrics.
-- Migration-aware SQLite persistence with compatibility and fixture-based upgrade tests.
+- Migration-aware SQLite persistence with compatibility and fixture-based
+  upgrade tests.
 
 ## Architecture
 
@@ -57,7 +64,8 @@ pip install -e .
 ## Quick Start
 
 ```powershell
-email-crawler --seeds data/seeds.txt --max-pages 100 --max-depth 2 --allow-domain example.com
+email-crawler --seeds data/seeds.txt --max-pages 100 --max-depth 2 \
+  --allow-domain example.com
 ```
 
 Module mode also works:
@@ -94,7 +102,8 @@ Migrations are applied in-order from [src/email_crawler/migrations](src/email_cr
 - `002_add_runs.sql`
 - `003_page_snapshots.sql`
 
-The migration path preserves legacy data, is idempotent, and tracks final state in `schema_version`.
+The migration path preserves legacy data, is idempotent, and tracks
+final state in `schema_version`.
 
 ## Plugin System
 
@@ -109,7 +118,9 @@ python -m pip install -e .[dev]
 pytest -q
 ```
 
-CI in [.github/workflows/ci.yml](.github/workflows/ci.yml) runs linting, staged mypy checks, docs sync tests, migration tests, packaging validation, benchmark regression checks, and full test suite.
+CI in [.github/workflows/ci.yml](.github/workflows/ci.yml) runs
+linting, staged mypy checks, docs sync tests, migration tests, packaging
+validation, benchmark regression checks, and full test suite.
 
 ## Benchmarks
 
@@ -119,10 +130,13 @@ Generate benchmark results:
 python scripts/benchmark_synthetic.py
 ```
 
-Check regressions against [benchmarks/baseline.json](benchmarks/baseline.json):
+Check regressions against
+[benchmarks/baseline.json](benchmarks/baseline.json):
 
 ```powershell
-python scripts/check_benchmark_regression.py --baseline benchmarks/baseline.json --latest output/benchmarks/latest.json
+python scripts/check_benchmark_regression.py \
+  --baseline benchmarks/baseline.json \
+  --latest output/benchmarks/latest.json
 ```
 
 ## Outputs
