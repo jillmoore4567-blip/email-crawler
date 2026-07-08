@@ -2,7 +2,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![CI](https://github.com/jillmoore4567/jillmoore4567-blip-email-crawler/actions/workflows/ci.yml/badge.svg)](https://github.com/jillmoore4567/jillmoore4567-blip-email-crawler/actions/workflows/ci.yml)
+[![CI](https://github.com/jillmoore4567-blip/email-crawler/actions/workflows/ci.yml/badge.svg)](https://github.com/jillmoore4567-blip/email-crawler/actions/workflows/ci.yml)
 [![Ruff](https://img.shields.io/badge/lint-ruff-informational.svg)](https://docs.astral.sh/ruff/)
 [![mypy](https://img.shields.io/badge/type%20check-mypy-informational.svg)](https://mypy.readthedocs.io/)
 [![Tests](https://img.shields.io/badge/tests-19%20passing-success.svg)](tests)
@@ -127,22 +127,20 @@ python scripts/check_benchmark_regression.py --baseline benchmarks/baseline.json
 
 ## Outputs
 
-| File | Purpose |
-|---|---|
-| `report.html` | Interactive crawl report |
-| `stats.json` | Crawl statistics and telemetry |
-| `snapshot_diff.json` | Historical comparison details |
-| `findings.db` | SQLite persistence store |
-| `results.csv` | Spreadsheet-oriented export |
+- `report.html` — interactive crawl report.
+- `stats.json` — crawl statistics and telemetry.
+- `snapshot_diff.json` — historical comparison details.
+- `findings.db` — SQLite persistence store.
+- `results.csv` — spreadsheet-oriented export.
 
 ## Screenshots
 
-Add these images before public announcement:
+Current screenshots are included in [docs/screenshots](docs/screenshots):
 
-- `docs/screenshots/report-overview.png`
-- `docs/screenshots/snapshot-comparison.png`
-- `docs/screenshots/performance-metrics.png`
-- `docs/screenshots/crawl-summary.png`
+- [report-overview.png](docs/screenshots/report-overview.png)
+- [snapshot-comparison.png](docs/screenshots/snapshot-comparison.png)
+- [performance-metrics.png](docs/screenshots/performance-metrics.png)
+- [crawl-summary.png](docs/screenshots/crawl-summary.png)
 
 ## Roadmap
 

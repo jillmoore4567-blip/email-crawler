@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "email-crawler"
 version = "1.0.0"
-description = "Bulk website crawler and email extractor"
+description = "Authorized asset inventory crawler with incremental crawling, SQLite history, snapshot diffs, and plugin-based extraction"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Copilot" }]
 license = "MIT"
-keywords = ["crawler", "osint", "security", "sqlite", "observability"]
+keywords = ["crawler", "asset-inventory", "security", "sqlite", "observability", "plugin-architecture"]
 classifiers = [
   "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Information Technology",
@@ -30,9 +30,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://example.local/email-crawler"
-Repository = "https://example.local/email-crawler/repo"
-Changelog = "https://example.local/email-crawler/changelog"
+Homepage = "https://github.com/jillmoore4567-blip/email-crawler"
+Repository = "https://github.com/jillmoore4567-blip/email-crawler"
+Changelog = "https://github.com/jillmoore4567-blip/email-crawler/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [
