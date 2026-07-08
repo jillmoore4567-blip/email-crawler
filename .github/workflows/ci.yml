@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install project and dev tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+          python -m pip install ruff mypy
+
+      - name: Ruff lint
+        run: |
+          ruff check src tests
+
+      - name: Type check (advisory broad pass)
+        continue-on-error: true
+        run: |
+          mypy src/email_crawler
+
+      - name: Type check (strict staged gate)
+        run: |
+          mypy --config-file mypy.ini
+
+      - name: Documentation sync validation
+        run: |
+          pytest -q tests/test_docs_sync.py
+
+      - name: Migration scenario tests
+        run: |
+          pytest -q tests/test_storage_history.py
+
+      - name: Migration fixture smoke tests
+        run: |
+          pytest -q tests/test_migration_fixture_smoke.py
+
+      - name: Build distributions
+        run: |
+          python -m build
+
+      - name: Validate distribution metadata
+        run: |
+          python -m twine check dist/*
+
+      - name: Clean environment wheel install smoke test
+        run: |
+          python -m venv .venv_ci_release
+          . .venv_ci_release/bin/activate
+          pip install --upgrade pip
+          pip install dist/*.whl
+          email-crawler --help
+
+      - name: Benchmark synthetic site
+        run: |
+          python scripts/benchmark_synthetic.py
+
+      - name: Benchmark regression gate
+        run: |
+          python scripts/check_benchmark_regression.py --baseline benchmarks/baseline.json --latest output/benchmarks/latest.json
+
+      - name: Full test suite
+        run: |
+          pytest -q

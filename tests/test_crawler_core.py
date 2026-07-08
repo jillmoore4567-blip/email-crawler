@@ -1,0 +1,86 @@
+from __future__ import annotations
+
+from email_crawler.crawler import AsyncOsintCrawler, CrawlConfig, CrawlResult
+from email_crawler.extractors import build_default_extractors
+from email_crawler.io_utils import write_stats_json
+
+
+def build_crawler() -> AsyncOsintCrawler:
+    return AsyncOsintCrawler(CrawlConfig())
+
+
+def test_url_canonicalization_removes_fragment_and_tracking_params() -> None:
+    crawler = build_crawler()
+    raw = "HTTPS://Example.com:443/a/./b/../c/?utm_source=x&b=2&a=1#fragment"
+    got = crawler._canonicalize_url(raw)
+    assert got == "https://example.com/a/c?a=1&b=2"
+
+
+def test_page_finding_extracts_structured_osint() -> None:
+    crawler = build_crawler()
+    html = """
+    <html>
+      <head>
+        <title>About Test</title>
+        <meta name="description" content="Public profile and contacts" />
+      </head>
+      <body>
+        Email us at admin@example.com
+        Call +1 (555) 123-4567
+        <a href="/contact">Contact</a>
+        <a href="/files/report.pdf">Report</a>
+        <a href="https://linkedin.com/company/example">LinkedIn</a>
+      </body>
+    </html>
+    """
+    finding = crawler._extract_page_finding("https://example.com/about", html, "example.com")
+
+    assert finding.title == "About Test"
+    assert finding.description == "Public profile and contacts"
+    assert "Public profile and contacts" not in finding.keywords
+    assert "admin@example.com" in finding.emails
+    assert any("555" in phone for phone in finding.phones)
+    assert "https://example.com/files/report.pdf" in finding.documents
+    assert "https://linkedin.com/company/example" in finding.social_accounts
+    assert "https://example.com/contact" in finding.internal_links
+
+
+def test_domain_allowlist_blocks_non_allowed_hosts() -> None:
+    crawler = AsyncOsintCrawler(CrawlConfig(allowed_domains=("example.com",)))
+    assert crawler._is_allowed_domain("https://example.com/path", "seed.com")
+    assert crawler._is_allowed_domain("https://sub.example.com/path", "seed.com")
+    assert not crawler._is_allowed_domain("https://evil.com/path", "seed.com")
+
+
+def test_duplicate_content_hash_detection_stable() -> None:
+    crawler = build_crawler()
+    html_a = "<html><body> Hello   world </body></html>"
+    html_b = "<html><body>Hello world</body></html>"
+    assert crawler._content_hash(html_a) == crawler._content_hash(html_b)
+
+
+def test_extractor_registry_respects_javascript_toggle() -> None:
+  def canonicalize(value: str) -> str:
+    return value
+
+  with_js = build_default_extractors(canonicalize, collect_javascript_assets=True)
+  without_js = build_default_extractors(canonicalize, collect_javascript_assets=False)
+
+  assert any(extractor.__class__.__name__ == "JavaScriptExtractor" for extractor in with_js)
+  assert all(extractor.__class__.__name__ != "JavaScriptExtractor" for extractor in without_js)
+
+
+def test_stats_include_observability_metrics(tmp_path) -> None:
+  result = CrawlResult(seed_url="https://example.test")
+  result.performance.fetch_time_seconds = 0.75
+  result.performance.extraction_time_seconds = 0.25
+  result.performance.requests_completed = 3
+  result.performance.bytes_downloaded = 1500
+
+  out = tmp_path / "stats.json"
+  stats = write_stats_json([result], str(out))
+
+  assert "performance" in stats
+  assert stats["performance"]["aggregate"]["requests_completed"] == 3
+  assert stats["performance"]["aggregate"]["avg_fetch_time_ms"] > 0
+  assert stats["performance"]["per_seed"][0]["seed_url"] == "https://example.test"

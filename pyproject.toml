@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "email-crawler"
+version = "1.0.0"
+description = "Bulk website crawler and email extractor"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Copilot" }]
+license = "MIT"
+keywords = ["crawler", "osint", "security", "sqlite", "observability"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Information Technology",
+  "Intended Audience :: System Administrators",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+  "Topic :: Security",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+  "aiohttp>=3.9.0",
+  "beautifulsoup4>=4.12.0",
+  "PyYAML>=6.0.0",
+]
+
+[project.urls]
+Homepage = "https://example.local/email-crawler"
+Repository = "https://example.local/email-crawler/repo"
+Changelog = "https://example.local/email-crawler/changelog"
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2.0",
+  "mypy>=1.10.0",
+  "pytest>=8.0.0",
+  "pytest-asyncio>=0.23.0",
+  "ruff>=0.6.0",
+  "twine>=5.1.0",
+]
+
+[project.scripts]
+email-crawler = "email_crawler.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

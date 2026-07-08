@@ -1,0 +1,7 @@
+{
+  "minimum_throughput_pages_per_second": 8.0,
+  "maximum_memory_peak_bytes": 67108864,
+  "maximum_sqlite_size_bytes": 8388608,
+  "maximum_avg_fetch_time_ms": 40.0,
+  "minimum_requests_completed": 10
+}

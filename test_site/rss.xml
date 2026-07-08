@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<rss version='2.0'>
+<channel>
+<title>Acme Test Feed</title>
+<link>http://127.0.0.1:8000/</link>
+<description>Fictional updates for crawler testing</description>
+<item><title>Launch</title><link>http://127.0.0.1:8000/news.html</link><description>Site launch notice</description></item>
+<item><title>New Case Study</title><link>http://127.0.0.1:8000/case-studies.html</link><description>Case study update</description></item>
+<item><title>Upcoming Webinar</title><link>http://127.0.0.1:8000/events.html</link><description>Events update</description></item>
+</channel>
+</rss>
+

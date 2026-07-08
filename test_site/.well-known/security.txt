@@ -1,0 +1,8 @@
+Contact: mailto:security@example.test
+Contact: https://127.0.0.1:8000/contact.html
+Encryption: https://example.test/pgp-key.txt
+Acknowledgments: https://127.0.0.1:8000/community.html
+Preferred-Languages: en
+Policy: https://127.0.0.1:8000/privacy.html
+Hiring: https://127.0.0.1:8000/careers.html
+Expires: 2027-12-31T23:59:59Z

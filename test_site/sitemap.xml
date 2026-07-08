@@ -1,0 +1,24 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<urlset xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'>
+  <url><loc>http://127.0.0.1:8000/index.html</loc></url>
+  <url><loc>http://127.0.0.1:8000/about.html</loc></url>
+  <url><loc>http://127.0.0.1:8000/services.html</loc></url>
+  <url><loc>http://127.0.0.1:8000/blog.html</loc></url>
+  <url><loc>http://127.0.0.1:8000/team.html</loc></url>
+  <url><loc>http://127.0.0.1:8000/careers.html</loc></url>
+  <url><loc>http://127.0.0.1:8000/pricing.html</loc></url>
+  <url><loc>http://127.0.0.1:8000/faq.html</loc></url>
+  <url><loc>http://127.0.0.1:8000/resources.html</loc></url>
+  <url><loc>http://127.0.0.1:8000/docs.html</loc></url>
+  <url><loc>http://127.0.0.1:8000/contact.html</loc></url>
+  <url><loc>http://127.0.0.1:8000/support.html</loc></url>
+  <url><loc>http://127.0.0.1:8000/legal.html</loc></url>
+  <url><loc>http://127.0.0.1:8000/privacy.html</loc></url>
+  <url><loc>http://127.0.0.1:8000/status.html</loc></url>
+  <url><loc>http://127.0.0.1:8000/partners.html</loc></url>
+  <url><loc>http://127.0.0.1:8000/events.html</loc></url>
+  <url><loc>http://127.0.0.1:8000/news.html</loc></url>
+  <url><loc>http://127.0.0.1:8000/case-studies.html</loc></url>
+  <url><loc>http://127.0.0.1:8000/community.html</loc></url>
+</urlset>
+
