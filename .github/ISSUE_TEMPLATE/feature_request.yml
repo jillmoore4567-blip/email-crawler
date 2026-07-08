@@ -1,0 +1,52 @@
+name: Feature request
+description: Suggest a backward-compatible enhancement or roadmap item
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. Please focus on user value, compatibility, and implementation constraints.
+  - type: input
+    id: summary
+    attributes:
+      label: Feature summary
+      placeholder: Add export filtering options to HTML report
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe behavior, CLI/config implications, and output changes
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Compatibility impact
+      options:
+        - No breaking change
+        - Potentially breaking (needs major version discussion)
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I checked for duplicate requests.
+          required: true
+        - label: I included enough context to evaluate scope and trade-offs.
+          required: true
