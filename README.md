@@ -135,6 +135,33 @@ Generate benchmark results:
 python scripts/benchmark_synthetic.py
 ```
 
+Dashboard performance benchmark (Phase 1 UI):
+
+```powershell
+python scripts/benchmark_dashboard.py \
+  --output output/benchmarks/dashboard_latest.json
+```
+
+This benchmark uses synthetic datasets (1k, 5k, and 10k rows) and
+measures:
+
+- page load time
+- global search latency
+- filter latency
+- sort latency
+
+Target threshold per operation is 200 ms.
+
+Latest local dashboard benchmark results:
+
+| Rows | Page load (ms) | Search (ms) | Filter (ms) | Sort (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| 1000 | 7.162 | 0.474 | 0.501 | 0.843 |
+| 5000 | 17.381 | 2.853 | 2.175 | 4.670 |
+| 10000 | 13.376 | 6.119 | 5.451 | 11.874 |
+
+All operations are below the 200 ms threshold.
+
 Check regressions against
 [benchmarks/baseline.json](benchmarks/baseline.json):
 

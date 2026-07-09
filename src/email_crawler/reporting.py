@@ -58,6 +58,14 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
     .scroll {{ max-height:320px; overflow:auto; border:1px solid var(--line); border-radius:10px; }}
     .pill {{ display:inline-block; margin:2px 4px 2px 0; padding:2px 7px; border:1px solid var(--line); border-radius:999px; font-size:12px; background:#f8fafc; }}
     .mono {{ font-family:Consolas, 'Courier New', monospace; font-size:12px; color:var(--muted); }}
+    .clickable {{ cursor:pointer; user-select:none; }}
+    .clickable::after {{ content:' ↕'; font-size:11px; color:#64748b; }}
+    tr[tabindex='0']:focus {{ outline:2px solid #93c5fd; outline-offset:-2px; }}
+    .type-filters {{ display:flex; flex-wrap:wrap; gap:8px; }}
+    .type-filters label {{ display:flex; align-items:center; gap:6px; margin:0; border:1px solid var(--line); border-radius:999px; padding:5px 8px; background:#fff; }}
+    .type-filters input {{ width:auto; }}
+    .details-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:8px; }}
+    .details-grid .card h3 {{ margin:0 0 6px; font-size:14px; }}
     @media (max-width: 950px) {{ .grid2 {{ grid-template-columns:1fr; }} .grid3 {{ grid-template-columns:1fr; }} }}
   </style>
 </head>
@@ -93,6 +101,10 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
       <h2>Dashboard Filters</h2>
       <div class='grid3'>
         <div>
+          <label for='globalSearch'>Global Search</label>
+          <input id='globalSearch' type='text' placeholder='Search pages, assets, findings, URLs, details...'/>
+        </div>
+        <div>
           <label for='seedFilter'>Seed</label>
           <select id='seedFilter'></select>
         </div>
@@ -116,6 +128,10 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
           <button onclick='applyFilters()'>Apply Filters</button>
           <button onclick='resetFilters()'>Reset</button>
         </div>
+      </div>
+      <div style='margin-top:10px;'>
+        <label>Type Filters</label>
+        <div id='typeFilterChecks' class='type-filters'></div>
       </div>
     </section>
 
@@ -153,23 +169,65 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
     </section>
 
     <section class='grid2'>
-      <div id='assets-table' class='card'>
-        <h2>Assets Table</h2>
+      <div id='pages-table' class='card'>
+        <h2>Pages Table</h2>
         <div class='toolbar'>
-          <button onclick="exportRows(filteredAssetsRows, 'assets_filtered', 'csv')">Export CSV</button>
-          <button onclick="exportRows(filteredAssetsRows, 'assets_filtered', 'json')">Export JSON</button>
-          <span id='assetsCount' class='mono'></span>
+          <button onclick="exportRows(filteredPageRows, 'pages_filtered', 'csv')">Export CSV</button>
+          <button onclick="exportRows(filteredPageRows, 'pages_filtered', 'json')">Export JSON</button>
+          <span id='pagesCount' class='mono'></span>
         </div>
         <div class='scroll'>
           <table>
-            <thead><tr><th>Seed</th><th>Domain</th><th>Type</th><th>Value</th><th>Page URL</th><th>Timestamp</th></tr></thead>
-            <tbody id='assetsTbody'></tbody>
+            <thead>
+              <tr>
+                <th class='clickable' onclick="sortTable('pages','seed','text')">Seed</th>
+                <th class='clickable' onclick="sortTable('pages','domain','text')">Domain</th>
+                <th class='clickable' onclick="sortTable('pages','title','text')">Title</th>
+                <th class='clickable' onclick="sortTable('pages','status','number')">Status</th>
+                <th class='clickable' onclick="sortTable('pages','emails_count','number')">Emails</th>
+                <th class='clickable' onclick="sortTable('pages','documents_count','number')">Documents</th>
+                <th class='clickable' onclick="sortTable('pages','timestamp','date')">Timestamp</th>
+              </tr>
+            </thead>
+            <tbody id='pagesTbody'></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id='emails-table' class='card'>
+        <h2>Emails Table</h2>
+        <div class='toolbar'>
+          <button onclick="exportRows(filteredEmailRows, 'emails_filtered', 'csv')">Export CSV</button>
+          <button onclick="exportRows(filteredEmailRows, 'emails_filtered', 'json')">Export JSON</button>
+          <span id='emailsCount' class='mono'></span>
+        </div>
+        <div class='scroll'>
+          <table>
+            <thead><tr><th class='clickable' onclick="sortTable('emails','seed','text')">Seed</th><th class='clickable' onclick="sortTable('emails','domain','text')">Domain</th><th class='clickable' onclick="sortTable('emails','value','text')">Email</th><th>Page URL</th><th class='clickable' onclick="sortTable('emails','timestamp','date')">Timestamp</th></tr></thead>
+            <tbody id='emailsTbody'></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class='grid2'>
+      <div id='documents-table' class='card'>
+        <h2>Documents Table</h2>
+        <div class='toolbar'>
+          <button onclick="exportRows(filteredDocumentRows, 'documents_filtered', 'csv')">Export CSV</button>
+          <button onclick="exportRows(filteredDocumentRows, 'documents_filtered', 'json')">Export JSON</button>
+          <span id='documentsCount' class='mono'></span>
+        </div>
+        <div class='scroll'>
+          <table>
+            <thead><tr><th class='clickable' onclick="sortTable('documents','seed','text')">Seed</th><th class='clickable' onclick="sortTable('documents','domain','text')">Domain</th><th class='clickable' onclick="sortTable('documents','value','text')">Document</th><th>Page URL</th><th class='clickable' onclick="sortTable('documents','timestamp','date')">Timestamp</th></tr></thead>
+            <tbody id='documentsTbody'></tbody>
           </table>
         </div>
       </div>
 
       <div id='intel-table' class='card'>
-        <h2>Intelligence Findings Table</h2>
+        <h2>Findings Table</h2>
         <div class='toolbar'>
           <button onclick="exportRows(filteredIntelRows, 'intelligence_filtered', 'csv')">Export CSV</button>
           <button onclick="exportRows(filteredIntelRows, 'intelligence_filtered', 'json')">Export JSON</button>
@@ -177,11 +235,16 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
         </div>
         <div class='scroll'>
           <table>
-            <thead><tr><th>Seed</th><th>Domain</th><th>Type</th><th>URL</th><th>Status</th><th>Timestamp</th><th>Details</th></tr></thead>
+            <thead><tr><th class='clickable' onclick="sortTable('intel','seed','text')">Seed</th><th class='clickable' onclick="sortTable('intel','domain','text')">Domain</th><th class='clickable' onclick="sortTable('intel','type','text')">Type</th><th>URL</th><th class='clickable' onclick="sortTable('intel','status','text')">Status</th><th class='clickable' onclick="sortTable('intel','timestamp','date')">Timestamp</th><th>Details</th></tr></thead>
             <tbody id='intelTbody'></tbody>
           </table>
         </div>
       </div>
+    </section>
+
+    <section class='card'>
+      <h2>Page Details</h2>
+      <div id='pageDetailsPanel' class='mono'>Select a page in any table to inspect extracted artifacts.</div>
     </section>
 
     <section class='card'>
@@ -197,11 +260,21 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
 
   <script>
     const payload = {json.dumps(payload, ensure_ascii=True)};
-    let filteredAssetsRows = [...payload.tables.assets_rows];
+    const FILTER_STATE_KEY = 'osint_dashboard_filters_v1';
+
+    let filteredPageRows = [...payload.tables.page_rows];
+    let filteredEmailRows = [...payload.tables.email_rows];
+    let filteredDocumentRows = [...payload.tables.document_rows];
     let filteredIntelRows = [...payload.tables.intelligence_rows];
-    let pageUrlQuickFilter = '';
+    let selectedPageUrl = '';
     let snapshotRows = [...(payload.snapshot.page_changes || [])];
     let filteredSnapshotRows = [...snapshotRows];
+    const tableSortState = {{
+      pages: {{key: 'timestamp', dir: 'desc', type: 'date'}},
+      emails: {{key: 'timestamp', dir: 'desc', type: 'date'}},
+      documents: {{key: 'timestamp', dir: 'desc', type: 'date'}},
+      intel: {{key: 'timestamp', dir: 'desc', type: 'date'}},
+    }};
 
     function exportChart(divId, filename) {{
       Plotly.downloadImage(divId, {{format:'png', filename:filename, width:1200, height:700, scale:2}});
@@ -211,12 +284,85 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
       fillSelect('seedFilter', payload.filters.seeds);
       fillSelect('domainFilter', payload.filters.domains);
       fillSelect('findingTypeFilter', payload.filters.finding_types);
+      renderTypeFilters(payload.filters.finding_types || []);
+
+      const search = document.getElementById('globalSearch');
+      search.addEventListener('input', applyFilters);
+      search.addEventListener('keydown', (event) => {{
+        if (event.key === 'Escape') {{
+          search.value = '';
+          applyFilters();
+        }}
+      }});
+
+      document.addEventListener('keydown', (event) => {{
+        if (event.key === '/' && document.activeElement !== search) {{
+          event.preventDefault();
+          search.focus();
+        }}
+      }});
+
+      loadFilterState();
     }}
 
     function fillSelect(id, options) {{
       const el = document.getElementById(id);
       const merged = ['All', ...options];
       el.innerHTML = merged.map(v => `<option value="${{escapeHtml(v)}}">${{escapeHtml(v)}}</option>`).join('');
+    }}
+
+    function renderTypeFilters(types) {{
+      const root = document.getElementById('typeFilterChecks');
+      root.innerHTML = types.map(type => `
+        <label>
+          <input type="checkbox" class="type-filter" value="${{escapeHtml(type)}}" checked onchange="applyFilters()"/>
+          <span>${{escapeHtml(type)}}</span>
+        </label>
+      `).join('');
+    }}
+
+    function activeTypeSet() {{
+      const boxes = Array.from(document.querySelectorAll('.type-filter'));
+      const enabled = boxes.filter(box => box.checked).map(box => box.value);
+      return new Set(enabled);
+    }}
+
+    function saveFilterState() {{
+      const boxes = Array.from(document.querySelectorAll('.type-filter'));
+      const state = {{
+        seed: document.getElementById('seedFilter').value,
+        domain: document.getElementById('domainFilter').value,
+        findingType: document.getElementById('findingTypeFilter').value,
+        fromDate: document.getElementById('fromDate').value,
+        toDate: document.getElementById('toDate').value,
+        search: document.getElementById('globalSearch').value,
+        selectedTypes: boxes.filter(box => box.checked).map(box => box.value),
+        selectedPageUrl,
+      }};
+      localStorage.setItem(FILTER_STATE_KEY, JSON.stringify(state));
+    }}
+
+    function loadFilterState() {{
+      const raw = localStorage.getItem(FILTER_STATE_KEY);
+      if (!raw) return;
+      try {{
+        const state = JSON.parse(raw);
+        if (state.seed) document.getElementById('seedFilter').value = state.seed;
+        if (state.domain) document.getElementById('domainFilter').value = state.domain;
+        if (state.findingType) document.getElementById('findingTypeFilter').value = state.findingType;
+        if (state.fromDate) document.getElementById('fromDate').value = state.fromDate;
+        if (state.toDate) document.getElementById('toDate').value = state.toDate;
+        if (state.search) document.getElementById('globalSearch').value = state.search;
+        if (Array.isArray(state.selectedTypes)) {{
+          const allowed = new Set(state.selectedTypes);
+          Array.from(document.querySelectorAll('.type-filter')).forEach(box => {{
+            box.checked = allowed.has(box.value);
+          }});
+        }}
+        if (state.selectedPageUrl) selectedPageUrl = state.selectedPageUrl;
+      }} catch (_err) {{
+        // Ignore invalid persisted state.
+      }}
     }}
 
     function parseDateOnly(ts) {{
@@ -247,24 +393,56 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
       const findingType = document.getElementById('findingTypeFilter').value;
       const fromDate = document.getElementById('fromDate').value;
       const toDate = document.getElementById('toDate').value;
+      const query = (document.getElementById('globalSearch').value || '').trim().toLowerCase();
+      const enabledTypes = activeTypeSet();
+
+      filteredPageRows = payload.tables.page_rows.filter(row => {{
+        if (seed !== 'All' && row.seed !== seed) return false;
+        if (domain !== 'All' && row.domain !== domain) return false;
+        if (findingType !== 'All' && !(row.finding_types || []).includes(findingType)) return false;
+        if (enabledTypes.size > 0 && !(row.finding_types || []).some(t => enabledTypes.has(t))) return false;
+        return withinDate(row.timestamp, fromDate, toDate);
+      }});
+
+      filteredEmailRows = payload.tables.email_rows.filter(row => {{
+        if (seed !== 'All' && row.seed !== seed) return false;
+        if (domain !== 'All' && row.domain !== domain) return false;
+        if (findingType !== 'All' && findingType !== 'email') return false;
+        if (enabledTypes.size > 0 && !enabledTypes.has('email')) return false;
+        return withinDate(row.timestamp, fromDate, toDate);
+      }});
+
+      filteredDocumentRows = payload.tables.document_rows.filter(row => {{
+        if (seed !== 'All' && row.seed !== seed) return false;
+        if (domain !== 'All' && row.domain !== domain) return false;
+        if (findingType !== 'All' && findingType !== 'document') return false;
+        if (enabledTypes.size > 0 && !enabledTypes.has('document')) return false;
+        return withinDate(row.timestamp, fromDate, toDate);
+      }});
 
       filteredIntelRows = payload.tables.intelligence_rows.filter(row => {{
         if (seed !== 'All' && row.seed !== seed) return false;
         if (domain !== 'All' && row.domain !== domain) return false;
         if (findingType !== 'All' && row.type !== findingType) return false;
-        if (pageUrlQuickFilter && !matchesIntelPage(row, pageUrlQuickFilter)) return false;
+        if (enabledTypes.size > 0 && !enabledTypes.has(row.type)) return false;
         return withinDate(row.timestamp, fromDate, toDate);
       }});
 
-      filteredAssetsRows = payload.tables.assets_rows.filter(row => {{
-        if (seed !== 'All' && row.seed !== seed) return false;
-        if (domain !== 'All' && row.domain !== domain) return false;
-        if (findingType !== 'All' && row.asset_type !== findingType) return false;
-        if (pageUrlQuickFilter && row.page_url !== pageUrlQuickFilter) return false;
-        return withinDate(row.timestamp, fromDate, toDate);
-      }});
+      if (query) {{
+        filteredPageRows = filteredPageRows.filter(row => matchesSearch(row, ['seed', 'domain', 'title', 'page_url', 'status', 'emails_count', 'documents_count']));
+        filteredEmailRows = filteredEmailRows.filter(row => matchesSearch(row, ['seed', 'domain', 'value', 'page_url']));
+        filteredDocumentRows = filteredDocumentRows.filter(row => matchesSearch(row, ['seed', 'domain', 'value', 'page_url']));
+        filteredIntelRows = filteredIntelRows.filter(row => matchesSearch(row, ['seed', 'domain', 'type', 'url', 'status', 'details']));
+      }}
 
+      filteredPageRows = sortRows(filteredPageRows, tableSortState.pages);
+      filteredEmailRows = sortRows(filteredEmailRows, tableSortState.emails);
+      filteredDocumentRows = sortRows(filteredDocumentRows, tableSortState.documents);
+      filteredIntelRows = sortRows(filteredIntelRows, tableSortState.intel);
+
+      saveFilterState();
       renderTables();
+      renderPageDetails();
     }}
 
     function resetFilters() {{
@@ -273,31 +451,120 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
       document.getElementById('findingTypeFilter').value = 'All';
       document.getElementById('fromDate').value = '';
       document.getElementById('toDate').value = '';
-      pageUrlQuickFilter = '';
-      filteredAssetsRows = [...payload.tables.assets_rows];
+      document.getElementById('globalSearch').value = '';
+      Array.from(document.querySelectorAll('.type-filter')).forEach(box => {{ box.checked = true; }});
+      filteredPageRows = [...payload.tables.page_rows];
+      filteredEmailRows = [...payload.tables.email_rows];
+      filteredDocumentRows = [...payload.tables.document_rows];
       filteredIntelRows = [...payload.tables.intelligence_rows];
+      selectedPageUrl = '';
+      saveFilterState();
       renderTables();
+      renderPageDetails();
     }}
 
-    function matchesIntelPage(row, pageUrl) {{
-      if (!pageUrl) return true;
-      if (row.url === pageUrl) return true;
-      const details = String(row.details || '');
-      return details.includes(pageUrl);
+    function matchesSearch(row, keys) {{
+      const query = (document.getElementById('globalSearch').value || '').trim().toLowerCase();
+      if (!query) return true;
+      const text = String(row.search_blob || keys.map(key => String(row[key] ?? '')).join(' ').toLowerCase());
+      return text.includes(query);
     }}
 
     function showFindingsForPage(pageUrl) {{
-      pageUrlQuickFilter = pageUrl || '';
-      applyFilters();
-      const target = document.getElementById('assets-table');
+      selectPage(pageUrl);
+      const target = document.getElementById('pages-table');
       if (target) target.scrollIntoView({{behavior:'smooth', block:'start'}});
     }}
 
     function showIntelForPage(pageUrl) {{
-      pageUrlQuickFilter = pageUrl || '';
-      applyFilters();
+      selectPage(pageUrl);
       const target = document.getElementById('intel-table');
       if (target) target.scrollIntoView({{behavior:'smooth', block:'start'}});
+    }}
+
+    function sortTable(tableName, key, type) {{
+      const state = tableSortState[tableName];
+      if (!state) return;
+      if (state.key === key) {{
+        state.dir = state.dir === 'asc' ? 'desc' : 'asc';
+      }} else {{
+        state.key = key;
+        state.type = type;
+        state.dir = 'asc';
+      }}
+      applyFilters();
+    }}
+
+    function sortRows(rows, state) {{
+      const copy = [...rows];
+      const key = state.key;
+      const dir = state.dir === 'desc' ? -1 : 1;
+      const type = state.type;
+      copy.sort((a, b) => {{
+        const av = a[key];
+        const bv = b[key];
+        if (type === 'number') return dir * ((Number(av) || 0) - (Number(bv) || 0));
+        if (type === 'date') {{
+          const aTs = Number(a.timestamp_ms || Date.parse(String(av || '0')) || 0);
+          const bTs = Number(b.timestamp_ms || Date.parse(String(bv || '0')) || 0);
+          return dir * (aTs - bTs);
+        }}
+        return dir * String(av ?? '').localeCompare(String(bv ?? ''));
+      }});
+      return copy;
+    }}
+
+    function selectPage(pageUrl) {{
+      selectedPageUrl = pageUrl || '';
+      saveFilterState();
+      renderPageDetails();
+    }}
+
+    function handleRowKey(event, pageUrl) {{
+      if (event.key === 'Enter' || event.key === ' ') {{
+        event.preventDefault();
+        selectPage(pageUrl);
+      }}
+    }}
+
+    function detailPills(items) {{
+      if (!items || items.length === 0) return '<span class="mono">none</span>';
+      return items.map(item => `<span class="pill">${{escapeHtml(item)}}</span>`).join('');
+    }}
+
+    function renderPageDetails() {{
+      const panel = document.getElementById('pageDetailsPanel');
+      if (!selectedPageUrl) {{
+        panel.innerHTML = 'Select a page in any table to inspect extracted artifacts.';
+        return;
+      }}
+      const details = payload.tables.page_details[selectedPageUrl];
+      if (!details) {{
+        panel.innerHTML = `No page details available for ${{escapeHtml(selectedPageUrl)}}.`;
+        return;
+      }}
+
+      const headers = Object.entries(details.security_headers || {{}});
+      const headerHtml = headers.length === 0
+        ? '<span class="mono">none</span>'
+        : headers.map(([k, v]) => `<span class="pill">${{escapeHtml(k)}}: ${{escapeHtml(v)}}</span>`).join('');
+
+      panel.innerHTML = `
+        <div class="mono"><b>URL:</b> <a href="${{escapeHtml(selectedPageUrl)}}" target="_blank" rel="noopener noreferrer">${{escapeHtml(selectedPageUrl)}}</a></div>
+        <div class="mono"><b>Seed:</b> ${{escapeHtml(details.seed || '')}} | <b>Domain:</b> ${{escapeHtml(details.domain || '')}}</div>
+        <div class="mono"><b>Title:</b> ${{escapeHtml(details.title || '')}}</div>
+        <div class="mono" style="margin-bottom:8px;"><b>Description:</b> ${{escapeHtml(details.description || '')}}</div>
+        <div class="details-grid">
+          <div class="card"><h3>Emails</h3>${{detailPills(details.emails)}}</div>
+          <div class="card"><h3>Phones</h3>${{detailPills(details.phones)}}</div>
+          <div class="card"><h3>Documents</h3>${{detailPills(details.documents)}}</div>
+          <div class="card"><h3>Images</h3>${{detailPills(details.images)}}</div>
+          <div class="card"><h3>JavaScript</h3>${{detailPills(details.javascript_assets)}}</div>
+          <div class="card"><h3>Technologies</h3>${{detailPills(details.technologies)}}</div>
+          <div class="card"><h3>Broken Links</h3>${{detailPills(details.broken_links)}}</div>
+          <div class="card"><h3>Security Headers</h3>${{headerHtml}}</div>
+        </div>
+      `;
     }}
 
     function applySnapshotFilters() {{
@@ -348,12 +615,30 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
     }}
 
     function renderTables() {{
-      const assetsBody = document.getElementById('assetsTbody');
-      if (filteredAssetsRows.length === 0) {{
-        assetsBody.innerHTML = '<tr><td colspan="6">No rows</td></tr>';
+      const pagesBody = document.getElementById('pagesTbody');
+      if (filteredPageRows.length === 0) {{
+        pagesBody.innerHTML = '<tr><td colspan="7">No rows</td></tr>';
       }} else {{
-        assetsBody.innerHTML = filteredAssetsRows.slice(0, 1000).map(row =>
-          `<tr><td>${{escapeHtml(row.seed)}}</td><td>${{escapeHtml(row.domain)}}</td><td>${{escapeHtml(row.asset_type)}}</td><td>${{escapeHtml(row.value)}}</td><td><a href="${{escapeHtml(row.page_url)}}">${{escapeHtml(row.page_url)}}</a></td><td>${{escapeHtml(row.timestamp)}}</td></tr>`
+        pagesBody.innerHTML = filteredPageRows.slice(0, 2000).map(row =>
+          `<tr tabindex="0" onclick="selectPage('${{escapeHtml(row.page_url)}}')" onkeydown="handleRowKey(event, '${{escapeHtml(row.page_url)}}')"><td>${{escapeHtml(row.seed)}}</td><td>${{escapeHtml(row.domain)}}</td><td>${{escapeHtml(row.title || '(untitled)')}}</td><td>${{escapeHtml(row.status)}}</td><td>${{escapeHtml(row.emails_count)}}</td><td>${{escapeHtml(row.documents_count)}}</td><td>${{escapeHtml(row.timestamp)}}</td></tr>`
+        ).join('');
+      }}
+
+      const emailsBody = document.getElementById('emailsTbody');
+      if (filteredEmailRows.length === 0) {{
+        emailsBody.innerHTML = '<tr><td colspan="5">No rows</td></tr>';
+      }} else {{
+        emailsBody.innerHTML = filteredEmailRows.slice(0, 2000).map(row =>
+          `<tr tabindex="0" onclick="selectPage('${{escapeHtml(row.page_url)}}')" onkeydown="handleRowKey(event, '${{escapeHtml(row.page_url)}}')"><td>${{escapeHtml(row.seed)}}</td><td>${{escapeHtml(row.domain)}}</td><td>${{escapeHtml(row.value)}}</td><td><a href="${{escapeHtml(row.page_url)}}" target="_blank" rel="noopener noreferrer">${{escapeHtml(row.page_url)}}</a></td><td>${{escapeHtml(row.timestamp)}}</td></tr>`
+        ).join('');
+      }}
+
+      const documentsBody = document.getElementById('documentsTbody');
+      if (filteredDocumentRows.length === 0) {{
+        documentsBody.innerHTML = '<tr><td colspan="5">No rows</td></tr>';
+      }} else {{
+        documentsBody.innerHTML = filteredDocumentRows.slice(0, 2000).map(row =>
+          `<tr tabindex="0" onclick="selectPage('${{escapeHtml(row.page_url)}}')" onkeydown="handleRowKey(event, '${{escapeHtml(row.page_url)}}')"><td>${{escapeHtml(row.seed)}}</td><td>${{escapeHtml(row.domain)}}</td><td><a href="${{escapeHtml(row.value)}}" target="_blank" rel="noopener noreferrer">${{escapeHtml(row.value)}}</a></td><td><a href="${{escapeHtml(row.page_url)}}" target="_blank" rel="noopener noreferrer">${{escapeHtml(row.page_url)}}</a></td><td>${{escapeHtml(row.timestamp)}}</td></tr>`
         ).join('');
       }}
 
@@ -361,12 +646,14 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
       if (filteredIntelRows.length === 0) {{
         intelBody.innerHTML = '<tr><td colspan="7">No rows</td></tr>';
       }} else {{
-        intelBody.innerHTML = filteredIntelRows.slice(0, 1000).map(row =>
-          `<tr><td>${{escapeHtml(row.seed)}}</td><td>${{escapeHtml(row.domain)}}</td><td>${{escapeHtml(row.type)}}</td><td><a href="${{escapeHtml(row.url)}}">${{escapeHtml(row.url)}}</a></td><td>${{escapeHtml(row.status)}}</td><td>${{escapeHtml(row.timestamp)}}</td><td>${{escapeHtml(row.details)}}</td></tr>`
+        intelBody.innerHTML = filteredIntelRows.slice(0, 2000).map(row =>
+          `<tr><td>${{escapeHtml(row.seed)}}</td><td>${{escapeHtml(row.domain)}}</td><td>${{escapeHtml(row.type)}}</td><td><a href="${{escapeHtml(row.url)}}" target="_blank" rel="noopener noreferrer">${{escapeHtml(row.url)}}</a></td><td>${{escapeHtml(row.status)}}</td><td>${{escapeHtml(row.timestamp)}}</td><td>${{escapeHtml(row.details)}}</td></tr>`
         ).join('');
       }}
 
-      document.getElementById('assetsCount').textContent = `Rows: ${{filteredAssetsRows.length}}`;
+      document.getElementById('pagesCount').textContent = `Rows: ${{filteredPageRows.length}}`;
+      document.getElementById('emailsCount').textContent = `Rows: ${{filteredEmailRows.length}}`;
+      document.getElementById('documentsCount').textContent = `Rows: ${{filteredDocumentRows.length}}`;
       document.getElementById('intelCount').textContent = `Rows: ${{filteredIntelRows.length}}`;
     }}
 
@@ -468,7 +755,7 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
     applySnapshotFilters();
     renderCharts();
     renderPerformanceChart();
-    renderTables();
+    applyFilters();
   </script>
 </body>
 </html>
@@ -575,6 +862,10 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
     graph_edges: Counter[tuple[str, str]] = Counter()
     intelligence_rows: list[dict] = []
     assets_rows: list[dict] = []
+    page_rows: list[dict] = []
+    email_rows: list[dict] = []
+    document_rows: list[dict] = []
+    page_details: dict[str, dict] = {}
 
     seeds_filter: set[str] = set()
     domains_filter: set[str] = set()
@@ -584,6 +875,7 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
         seed = result.seed_url
         seeds_filter.add(seed)
         result_ts = (result.finished_at or result.started_at).isoformat()
+        result_ts_ms = int((result.finished_at or result.started_at).timestamp() * 1000)
 
         for url in result.visited_urls:
             dom = (urlsplit(url).hostname or "unknown").lower()
@@ -593,6 +885,64 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
         for finding in result.page_findings:
             src_dom = (urlsplit(finding.url).hostname or "unknown").lower()
             domains_filter.add(src_dom)
+
+            finding_types: list[str] = []
+            if finding.emails:
+                finding_types.append("email")
+            if finding.documents:
+                finding_types.append("document")
+            if finding.images:
+                finding_types.append("image")
+            if finding.social_accounts:
+                finding_types.append("social")
+            if finding.phones:
+                finding_types.append("phone")
+            if finding.javascript_assets:
+                finding_types.append("javascript")
+            if finding.technologies:
+                finding_types.append("technology")
+            if finding.broken_links:
+                finding_types.append("broken_link")
+            if finding.security_headers:
+                finding_types.append("security_header")
+
+            page_rows.append(
+                {
+                    "seed": seed,
+                    "domain": src_dom,
+                    "page_url": finding.url,
+                    "title": finding.title,
+                    "status": finding.http_status,
+                    "links_count": len(finding.links),
+                    "emails_count": len(finding.emails),
+                    "documents_count": len(finding.documents),
+                    "timestamp": result_ts,
+                "timestamp_ms": result_ts_ms,
+                    "finding_types": finding_types,
+                "search_blob": (
+                  f"{seed} {src_dom} {finding.url} {finding.title} "
+                  f"{finding.http_status} {len(finding.emails)} {len(finding.documents)}"
+                ).lower(),
+                }
+            )
+            page_details[finding.url] = {
+                "seed": seed,
+                "domain": src_dom,
+                "title": finding.title,
+                "description": finding.description,
+                "keywords": list(finding.keywords),
+                "emails": list(finding.emails),
+                "phones": list(finding.phones),
+                "documents": list(finding.documents),
+                "images": list(finding.images),
+                "javascript_assets": list(finding.javascript_assets),
+                "technologies": list(finding.technologies),
+                "security_headers": dict(finding.security_headers),
+                "broken_links": list(finding.broken_links),
+                "internal_links": list(finding.internal_links),
+                "external_links": list(finding.external_links),
+            }
+
             for link in finding.links:
                 tgt_dom = (urlsplit(link).hostname or "unknown").lower()
                 graph_edges[(src_dom, tgt_dom)] += 1
@@ -610,6 +960,17 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
                         "timestamp": result_ts,
                     }
                 )
+                email_rows.append(
+                    {
+                        "seed": seed,
+                        "domain": src_dom,
+                        "value": value,
+                        "page_url": finding.url,
+                        "timestamp": result_ts,
+                    "timestamp_ms": result_ts_ms,
+                    "search_blob": f"{seed} {src_dom} {value} {finding.url}".lower(),
+                    }
+                )
                 types_filter.add("email")
 
             for value in finding.documents:
@@ -623,6 +984,17 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
                         "value": value,
                         "page_url": finding.url,
                         "timestamp": result_ts,
+                    }
+                )
+                document_rows.append(
+                    {
+                        "seed": seed,
+                        "domain": src_dom,
+                        "value": value,
+                        "page_url": finding.url,
+                        "timestamp": result_ts,
+                    "timestamp_ms": result_ts_ms,
+                    "search_blob": f"{seed} {src_dom} {value} {finding.url}".lower(),
                     }
                 )
                 types_filter.add("document")
@@ -732,7 +1104,12 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
                     "url": intel.url,
                     "status": intel.status,
                     "timestamp": result_ts,
+                "timestamp_ms": result_ts_ms,
                     "details": json.dumps(intel.details, sort_keys=True),
+                "search_blob": (
+                  f"{seed} {dom} {intel.finding_type} {intel.url} "
+                  f"{intel.status} {json.dumps(intel.details, sort_keys=True)}"
+                ).lower(),
                 }
             )
 
@@ -788,8 +1165,12 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
             "unique_domains": len(domain_pages),
         },
         "tables": {
+          "page_rows": page_rows,
+          "email_rows": email_rows,
+          "document_rows": document_rows,
             "assets_rows": assets_rows,
             "intelligence_rows": intelligence_rows,
+          "page_details": page_details,
         },
         "filters": {
             "seeds": sorted(seeds_filter),

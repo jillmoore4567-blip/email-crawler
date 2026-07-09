@@ -328,6 +328,15 @@ async def test_end_to_end_cli_outputs_with_synthetic_site(tmp_path: Path, unused
         report_html = out_html.read_text(encoding="utf-8")
         assert "Performance Observability" in report_html
         assert "Snapshot Comparison" in report_html
+        assert "Global Search" in report_html
+        assert "Type Filters" in report_html
+        assert "Pages Table" in report_html
+        assert "Emails Table" in report_html
+        assert "Documents Table" in report_html
+        assert "Findings Table" in report_html
+        assert "Page Details" in report_html
+        assert "sortTable('pages'" in report_html
+        assert "FILTER_STATE_KEY" in report_html
 
         conn = sqlite3.connect(out_sqlite)
         try:
