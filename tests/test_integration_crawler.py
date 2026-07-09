@@ -337,6 +337,14 @@ async def test_end_to_end_cli_outputs_with_synthetic_site(tmp_path: Path, unused
         assert "Page Details" in report_html
         assert "sortTable('pages'" in report_html
         assert "FILTER_STATE_KEY" in report_html
+        assert "Crawl Metrics" in report_html
+        assert "Email Domain Distribution" in report_html
+        assert "Document Type Distribution" in report_html
+        assert "Crawl Timing" in report_html
+        assert "chartExportFormat" in report_html
+        assert "Dark Mode" in report_html
+        assert "toggleTheme()" in report_html
+        assert "format === 'svg'" in report_html
 
         conn = sqlite3.connect(out_sqlite)
         try:

@@ -96,6 +96,15 @@ Core options:
 - Dashboard output is generated in `output/report.html`.
 - Snapshot Comparison includes detailed page-level change records and filtering.
 - Performance Observability includes aggregate and per-seed timing metrics.
+- Interactive analytics include:
+  - Crawl Metrics chart (pages, emails, documents, intelligence)
+  - Email Domain Distribution chart
+  - Document Type Distribution chart
+  - Crawl Timing chart (fetch/extraction/intelligence/robots/wait)
+- Global search filters all findings tables.
+- Page Details panel shows all extracted artifacts for the selected page.
+- Charts can be exported as PNG or SVG.
+- Dashboard supports dark mode and responsive/mobile layout.
 
 ## Database Schema
 

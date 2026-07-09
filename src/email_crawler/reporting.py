@@ -31,6 +31,24 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
       --accent:#0f766e;
       --accent2:#1d4ed8;
       --accent3:#b45309;
+      --header-ink:#0b2447;
+      --header-bg:#f7fafd;
+      --focus:#93c5fd;
+      --panel-shadow:0 4px 18px rgba(31,41,55,.06);
+    }}
+    [data-theme='dark'] {{
+      --bg:#0b1220;
+      --ink:#e2e8f0;
+      --muted:#94a3b8;
+      --card:#111a2b;
+      --line:#24324a;
+      --accent:#0d9488;
+      --accent2:#2563eb;
+      --accent3:#f59e0b;
+      --header-ink:#dbeafe;
+      --header-bg:#0f172a;
+      --focus:#38bdf8;
+      --panel-shadow:0 8px 24px rgba(0,0,0,.4);
     }}
     * {{ box-sizing: border-box; }}
     body {{ margin:0; color:var(--ink); background:radial-gradient(1200px 600px at -10% -20%, #e7f6f2 0%, transparent 60%), var(--bg); font-family:'Segoe UI', Tahoma, sans-serif; }}
@@ -43,30 +61,41 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
     .kpi .box b {{ display:block; font-size:22px; margin-top:4px; }}
     .grid2 {{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; }}
     .grid3 {{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:10px; }}
-    .card {{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px; box-shadow:0 4px 18px rgba(31,41,55,.06); }}
+    .card {{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px; box-shadow:var(--panel-shadow); }}
     .card h2 {{ margin:0 0 8px; font-size:17px; }}
     .plot {{ width:100%; height:340px; }}
     .plotTall {{ width:100%; height:420px; }}
     .toolbar {{ margin:6px 0 8px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }}
-    button {{ border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:8px; padding:6px 10px; cursor:pointer; }}
-    button:hover {{ border-color:#b8c6da; background:#f9fbff; }}
+    button {{ border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:8px; padding:6px 10px; cursor:pointer; }}
+    button:hover {{ border-color:#b8c6da; background:color-mix(in srgb, var(--card) 92%, #ffffff 8%); }}
     label {{ font-size:12px; color:var(--muted); display:block; margin-bottom:4px; }}
-    select,input {{ width:100%; border:1px solid var(--line); border-radius:8px; padding:8px; background:#fff; }}
+    select,input {{ width:100%; border:1px solid var(--line); border-radius:8px; padding:8px; background:var(--card); color:var(--ink); }}
     table {{ width:100%; border-collapse:collapse; font-size:13px; }}
     th,td {{ border-bottom:1px solid var(--line); padding:7px 6px; text-align:left; vertical-align:top; }}
-    th {{ color:#0b2447; background:#f7fafd; position:sticky; top:0; }}
+    th {{ color:var(--header-ink); background:var(--header-bg); position:sticky; top:0; }}
     .scroll {{ max-height:320px; overflow:auto; border:1px solid var(--line); border-radius:10px; }}
     .pill {{ display:inline-block; margin:2px 4px 2px 0; padding:2px 7px; border:1px solid var(--line); border-radius:999px; font-size:12px; background:#f8fafc; }}
     .mono {{ font-family:Consolas, 'Courier New', monospace; font-size:12px; color:var(--muted); }}
     .clickable {{ cursor:pointer; user-select:none; }}
     .clickable::after {{ content:' ↕'; font-size:11px; color:#64748b; }}
-    tr[tabindex='0']:focus {{ outline:2px solid #93c5fd; outline-offset:-2px; }}
+    tr[tabindex='0']:focus {{ outline:2px solid var(--focus); outline-offset:-2px; }}
     .type-filters {{ display:flex; flex-wrap:wrap; gap:8px; }}
-    .type-filters label {{ display:flex; align-items:center; gap:6px; margin:0; border:1px solid var(--line); border-radius:999px; padding:5px 8px; background:#fff; }}
+    .type-filters label {{ display:flex; align-items:center; gap:6px; margin:0; border:1px solid var(--line); border-radius:999px; padding:5px 8px; background:var(--card); }}
     .type-filters input {{ width:auto; }}
     .details-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:8px; }}
     .details-grid .card h3 {{ margin:0 0 6px; font-size:14px; }}
+    .top-actions {{ margin-top:10px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }}
+    .top-actions .spacer {{ flex:1 1 auto; }}
+    .segment {{ display:flex; align-items:center; gap:8px; }}
     @media (max-width: 950px) {{ .grid2 {{ grid-template-columns:1fr; }} .grid3 {{ grid-template-columns:1fr; }} }}
+    @media (max-width: 640px) {{
+      .wrap {{ margin:12px auto; padding:0 8px 20px; }}
+      .top h1 {{ font-size:22px; }}
+      .plot {{ height:300px; }}
+      .plotTall {{ height:360px; }}
+      .toolbar {{ gap:6px; }}
+      button {{ padding:6px 8px; font-size:12px; }}
+    }}
   </style>
 </head>
 <body>
@@ -74,6 +103,17 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
     <section class='top'>
       <h1>OSINT Crawl Dashboard</h1>
       <div class='sub'>Generated {escape(payload['generated_at'])} | Authorized asset discovery summary</div>
+      <div class='top-actions'>
+        <div class='segment'>
+          <label for='chartExportFormat' style='margin:0;'>Chart Export</label>
+          <select id='chartExportFormat' style='width:auto;'>
+            <option value='png'>PNG</option>
+            <option value='svg'>SVG</option>
+          </select>
+        </div>
+        <div class='spacer'></div>
+        <button id='themeToggle' type='button' onclick='toggleTheme()' aria-label='Toggle dark mode'>Dark Mode</button>
+      </div>
       <div class='kpi'>
         <div class='box'><span>Seeds</span><b>{payload['stats'].get('seeds_processed', 0)}</b></div>
         <div class='box'><span>Pages</span><b>{payload['stats'].get('pages_crawled', 0)}</b></div>
@@ -137,28 +177,34 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
 
     <section class='grid2'>
       <div class='card'>
-        <h2>Crawl Statistics</h2>
-        <div class='toolbar'><button onclick="exportChart('seedStatsPlot','seed_stats')">Export Chart</button></div>
-        <div id='seedStatsPlot' class='plot'></div>
+        <h2>Crawl Metrics</h2>
+        <div class='toolbar'><button onclick="exportChart('crawlMetricsPlot','crawl_metrics')">Export Chart</button></div>
+        <div id='crawlMetricsPlot' class='plot'></div>
       </div>
       <div class='card'>
-        <h2>Domain Statistics</h2>
-        <div class='toolbar'><button onclick="exportChart('domainPlot','domain_stats')">Export Chart</button></div>
-        <div id='domainPlot' class='plot'></div>
+        <h2>Email Domain Distribution</h2>
+        <div class='toolbar'><button onclick="exportChart('emailDomainPlot','email_domain_distribution')">Export Chart</button></div>
+        <div id='emailDomainPlot' class='plot'></div>
       </div>
     </section>
 
     <section class='grid2'>
       <div class='card'>
-        <h2>File-Type Statistics</h2>
-        <div class='toolbar'><button onclick="exportChart('fileTypePlot','file_type_stats')">Export Chart</button></div>
-        <div id='fileTypePlot' class='plot'></div>
+        <h2>Document Type Distribution</h2>
+        <div class='toolbar'><button onclick="exportChart('documentTypePlot','document_type_distribution')">Export Chart</button></div>
+        <div id='documentTypePlot' class='plot'></div>
       </div>
       <div class='card'>
-        <h2>Crawl Timeline</h2>
-        <div class='toolbar'><button onclick="exportChart('timelinePlot','crawl_timeline')">Export Chart</button></div>
-        <div id='timelinePlot' class='plot'></div>
+        <h2>Crawl Timing</h2>
+        <div class='toolbar'><button onclick="exportChart('crawlTimingPlot','crawl_timing')">Export Chart</button></div>
+        <div id='crawlTimingPlot' class='plot'></div>
       </div>
+    </section>
+
+    <section class='card'>
+      <h2>Crawl Timeline</h2>
+      <div class='toolbar'><button onclick="exportChart('timelinePlot','crawl_timeline')">Export Chart</button></div>
+      <div id='timelinePlot' class='plot'></div>
     </section>
 
     <section class='card'>
@@ -261,6 +307,7 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
   <script>
     const payload = {json.dumps(payload, ensure_ascii=True)};
     const FILTER_STATE_KEY = 'osint_dashboard_filters_v1';
+    const THEME_STATE_KEY = 'osint_dashboard_theme_v1';
 
     let filteredPageRows = [...payload.tables.page_rows];
     let filteredEmailRows = [...payload.tables.email_rows];
@@ -276,8 +323,28 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
       intel: {{key: 'timestamp', dir: 'desc', type: 'date'}},
     }};
 
+    function currentExportFormat() {{
+      const el = document.getElementById('chartExportFormat');
+      return el ? (el.value || 'png') : 'png';
+    }}
+
     function exportChart(divId, filename) {{
-      Plotly.downloadImage(divId, {{format:'png', filename:filename, width:1200, height:700, scale:2}});
+      const format = currentExportFormat();
+      const width = format === 'svg' ? 1400 : 1200;
+      const height = 700;
+      Plotly.downloadImage(divId, {{format, filename, width, height, scale:2}});
+    }}
+
+    function applyTheme(theme) {{
+      document.documentElement.setAttribute('data-theme', theme);
+      const btn = document.getElementById('themeToggle');
+      if (btn) btn.textContent = theme === 'dark' ? 'Light Mode' : 'Dark Mode';
+      localStorage.setItem(THEME_STATE_KEY, theme);
+    }}
+
+    function toggleTheme() {{
+      const current = document.documentElement.getAttribute('data-theme') || 'light';
+      applyTheme(current === 'dark' ? 'light' : 'dark');
     }}
 
     function populateFilters() {{
@@ -647,7 +714,7 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
         intelBody.innerHTML = '<tr><td colspan="7">No rows</td></tr>';
       }} else {{
         intelBody.innerHTML = filteredIntelRows.slice(0, 2000).map(row =>
-          `<tr><td>${{escapeHtml(row.seed)}}</td><td>${{escapeHtml(row.domain)}}</td><td>${{escapeHtml(row.type)}}</td><td><a href="${{escapeHtml(row.url)}}" target="_blank" rel="noopener noreferrer">${{escapeHtml(row.url)}}</a></td><td>${{escapeHtml(row.status)}}</td><td>${{escapeHtml(row.timestamp)}}</td><td>${{escapeHtml(row.details)}}</td></tr>`
+          `<tr tabindex="0" onclick="selectPage('${{escapeHtml(row.page_url || row.url)}}')" onkeydown="handleRowKey(event, '${{escapeHtml(row.page_url || row.url)}}')"><td>${{escapeHtml(row.seed)}}</td><td>${{escapeHtml(row.domain)}}</td><td>${{escapeHtml(row.type)}}</td><td><a href="${{escapeHtml(row.url)}}" target="_blank" rel="noopener noreferrer">${{escapeHtml(row.url)}}</a></td><td>${{escapeHtml(row.status)}}</td><td>${{escapeHtml(row.timestamp)}}</td><td>${{escapeHtml(row.details)}}</td></tr>`
         ).join('');
       }}
 
@@ -695,23 +762,25 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
     }}
 
     function renderCharts() {{
-      const seed = payload.charts.seed;
-      Plotly.newPlot('seedStatsPlot', [
-        {{type:'bar', x:seed.labels, y:seed.pages, name:'Pages', marker:{{color:'#0f766e'}}}},
-        {{type:'bar', x:seed.labels, y:seed.emails, name:'Emails', marker:{{color:'#1d4ed8'}}}},
-        {{type:'bar', x:seed.labels, y:seed.documents, name:'Documents', marker:{{color:'#b45309'}}}}
-      ], {{barmode:'group', margin:{{t:20,r:10,l:50,b:70}}}}, {{responsive:true}});
+      const cm = payload.charts.crawl_metrics;
+      Plotly.newPlot('crawlMetricsPlot', [
+        {{type:'bar', x:cm.labels, y:cm.values, marker:{{color:['#0f766e','#1d4ed8','#b45309','#334155']}}}}
+      ], {{margin:{{t:20,r:10,l:55,b:70}}, yaxis:{{title:'Count'}}}}, {{responsive:true}});
 
-      const dom = payload.charts.domains;
-      Plotly.newPlot('domainPlot', [
-        {{type:'bar', x:dom.labels, y:dom.pages, name:'Pages', marker:{{color:'#334155'}}}},
-        {{type:'bar', x:dom.labels, y:dom.links, name:'Discovered Links', marker:{{color:'#0ea5e9'}}}}
-      ], {{barmode:'group', margin:{{t:20,r:10,l:50,b:90}}}}, {{responsive:true}});
+      const ed = payload.charts.email_domains;
+      Plotly.newPlot('emailDomainPlot', [
+        {{type:'bar', x:ed.labels, y:ed.values, marker:{{color:'#1d4ed8'}}}}
+      ], {{margin:{{t:20,r:10,l:55,b:90}}, yaxis:{{title:'Emails'}}}}, {{responsive:true}});
 
-      const ft = payload.charts.filetypes;
-      Plotly.newPlot('fileTypePlot', [
-        {{type:'pie', labels:ft.labels, values:ft.values, textinfo:'label+percent', hole:.38}}
+      const dt = payload.charts.document_types;
+      Plotly.newPlot('documentTypePlot', [
+        {{type:'pie', labels:dt.labels, values:dt.values, textinfo:'label+percent', hole:.38}}
       ], {{margin:{{t:20,r:10,l:10,b:10}}}}, {{responsive:true}});
+
+      const ct = payload.charts.crawl_timing;
+      Plotly.newPlot('crawlTimingPlot', [
+        {{type:'bar', x:ct.labels, y:ct.values, marker:{{color:['#0f766e','#1d4ed8','#b45309','#334155','#0ea5e9']}}}}
+      ], {{margin:{{t:20,r:10,l:55,b:90}}, yaxis:{{title:'Seconds'}}}}, {{responsive:true}});
 
       const tl = payload.charts.timeline;
       Plotly.newPlot('timelinePlot', [
@@ -751,6 +820,7 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
       }}, {{responsive:true}});
     }}
 
+    applyTheme(localStorage.getItem(THEME_STATE_KEY) || 'light');
     populateFilters();
     applySnapshotFilters();
     renderCharts();
@@ -857,6 +927,8 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
     domain_pages: Counter[str] = Counter()
     domain_links: Counter[str] = Counter()
     filetypes: Counter[str] = Counter()
+    email_domains: Counter[str] = Counter()
+    document_types: Counter[str] = Counter()
     errors: list[dict] = []
 
     graph_edges: Counter[tuple[str, str]] = Counter()
@@ -950,6 +1022,8 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
                 domains_filter.add(tgt_dom)
 
             for value in finding.emails:
+                email_domain = (value.split("@", 1)[1].lower() if "@" in value else "unknown")
+                email_domains[email_domain] += 1
                 assets_rows.append(
                     {
                         "seed": seed,
@@ -976,6 +1050,7 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
             for value in finding.documents:
                 ext = _ext_for_url(value)
                 filetypes[ext] += 1
+                document_types[ext] += 1
                 assets_rows.append(
                     {
                         "seed": seed,
@@ -1179,6 +1254,42 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
         },
         "errors": errors,
         "charts": {
+          "crawl_metrics": {
+            "labels": ["Pages", "Emails", "Documents", "Intelligence"],
+            "values": [
+              int(stats.get("pages_crawled", 0) if isinstance(stats, dict) else 0),
+              int(stats.get("unique_emails", 0) if isinstance(stats, dict) else 0),
+              int(stats.get("unique_documents", 0) if isinstance(stats, dict) else 0),
+              int(stats.get("intelligence_findings", 0) if isinstance(stats, dict) else 0),
+            ],
+          },
+          "email_domains": {
+            "labels": [k for k, _ in email_domains.most_common(12)] or ["none"],
+            "values": [v for _, v in email_domains.most_common(12)] or [0],
+          },
+          "document_types": {
+            "labels": [k for k, _ in document_types.most_common(12)] or ["none"],
+            "values": [v for _, v in document_types.most_common(12)] or [0],
+          },
+          "crawl_timing": {
+            "labels": [
+              "Fetch",
+              "Extraction",
+              "Intelligence",
+              "Robots",
+              "Rate-limit wait",
+            ],
+            "values": [
+              float(performance.get("aggregate", {}).get("fetch_time_seconds", 0.0) or 0.0),
+              float(performance.get("aggregate", {}).get("extraction_time_seconds", 0.0) or 0.0),
+              float(
+                performance.get("aggregate", {}).get("intelligence_collection_time_seconds", 0.0)
+                or 0.0
+              ),
+              float(performance.get("aggregate", {}).get("robots_time_seconds", 0.0) or 0.0),
+              float(performance.get("aggregate", {}).get("rate_limit_wait_seconds", 0.0) or 0.0),
+            ],
+          },
             "seed": {
                 "labels": seed_labels,
                 "pages": seed_pages,
