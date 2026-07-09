@@ -345,6 +345,15 @@ async def test_end_to_end_cli_outputs_with_synthetic_site(tmp_path: Path, unused
         assert "Dark Mode" in report_html
         assert "toggleTheme()" in report_html
         assert "format === 'svg'" in report_html
+        assert "Page Relationship Graph" in report_html
+        assert "pageGraphPlot" in report_html
+        assert "graphSeedFilter" in report_html
+        assert "graphDomainFilter" in report_html
+        assert "graphSnapshotFilter" in report_html
+        assert "applyGraphFilters()" in report_html
+        assert "renderPageGraph()" in report_html
+        assert "plotly_click" in report_html
+        assert "click a node to open Page Details" in report_html
 
         conn = sqlite3.connect(out_sqlite)
         try:

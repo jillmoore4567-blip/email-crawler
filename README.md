@@ -101,6 +101,7 @@ Core options:
   - Email Domain Distribution chart
   - Document Type Distribution chart
   - Crawl Timing chart (fetch/extraction/intelligence/robots/wait)
+  - Page Relationship Graph with zoom, pan, selection, and snapshot-change highlighting
 - Global search filters all findings tables.
 - Page Details panel shows all extracted artifacts for the selected page.
 - Charts can be exported as PNG or SVG.
@@ -158,16 +159,17 @@ measures:
 - global search latency
 - filter latency
 - sort latency
+- page graph render latency
 
 Target threshold per operation is 200 ms.
 
 Latest local dashboard benchmark results:
 
-| Rows | Page load (ms) | Search (ms) | Filter (ms) | Sort (ms) |
-| --- | ---: | ---: | ---: | ---: |
-| 1000 | 7.162 | 0.474 | 0.501 | 0.843 |
-| 5000 | 17.381 | 2.853 | 2.175 | 4.670 |
-| 10000 | 13.376 | 6.119 | 5.451 | 11.874 |
+| Rows | Page load (ms) | Search (ms) | Filter (ms) | Sort (ms) | Graph render (ms) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1000 | 6.495 | 0.402 | 0.283 | 0.725 | 0.428 |
+| 5000 | 12.812 | 2.721 | 2.253 | 4.741 | 1.499 |
+| 10000 | 12.954 | 6.126 | 5.322 | 11.842 | 4.031 |
 
 All operations are below the 200 ms threshold.
 

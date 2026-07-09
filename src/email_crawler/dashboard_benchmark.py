@@ -17,6 +17,7 @@ class DashboardBenchmarkResult:
     search_latency_ms: float
     filter_latency_ms: float
     sort_latency_ms: float
+    graph_render_ms: float
 
     def as_dict(self) -> dict[str, float | int]:
         return {
@@ -25,6 +26,7 @@ class DashboardBenchmarkResult:
             "search_latency_ms": self.search_latency_ms,
             "filter_latency_ms": self.filter_latency_ms,
             "sort_latency_ms": self.sort_latency_ms,
+            "graph_render_ms": self.graph_render_ms,
         }
 
 
@@ -43,6 +45,8 @@ def _generate_dataset(rows: int) -> dict[str, list[dict[str, object]]]:
     email_rows: list[dict[str, object]] = []
     document_rows: list[dict[str, object]] = []
     intel_rows: list[dict[str, object]] = []
+    page_graph_nodes: list[dict[str, object]] = []
+    page_graph_edges: list[dict[str, object]] = []
 
     seeds = [f"http://seed{i}.example.test/index.html" for i in range(1, 6)]
     domains = [f"site{i}.example.test" for i in range(1, 11)]
@@ -71,6 +75,30 @@ def _generate_dataset(rows: int) -> dict[str, list[dict[str, object]]]:
             "search_blob": f"{seed} {domain} {page_url} synthetic page {i} email document technology",
         }
         page_rows.append(page_row)
+        change_type = "unchanged"
+        if i % 11 == 0:
+            change_type = "changed"
+        elif i % 17 == 0:
+            change_type = "new"
+        page_graph_nodes.append(
+            {
+                "url": page_url,
+                "domain": domain,
+                "seed": seed,
+                "change_type": change_type,
+                "size": 10 + (i % 8),
+                "x": round((i % 100) * 0.05, 4),
+                "y": round((i // 100) * 0.05, 4),
+            }
+        )
+        if i > 0:
+            prev_domain = domains[(i - 1) % len(domains)]
+            prev_url = f"https://{prev_domain}/page-{i - 1}.html"
+            page_graph_edges.append({"source": prev_url, "target": page_url, "weight": 1})
+        if i > 4:
+            parent_domain = domains[(i - 5) % len(domains)]
+            parent_url = f"https://{parent_domain}/page-{i - 5}.html"
+            page_graph_edges.append({"source": parent_url, "target": page_url, "weight": 1})
 
         email_rows.append(
             {
@@ -116,6 +144,8 @@ def _generate_dataset(rows: int) -> dict[str, list[dict[str, object]]]:
         "email_rows": email_rows,
         "document_rows": document_rows,
         "intelligence_rows": intel_rows,
+        "page_graph_nodes": page_graph_nodes,
+        "page_graph_edges": page_graph_edges,
     }
 
 
@@ -189,6 +219,37 @@ def _sort_operation(dataset: dict[str, list[dict[str, object]]]) -> None:
     _ = sorted(dataset["intelligence_rows"], key=lambda row: (str(row.get("type", "")), int(row.get("timestamp_ms", 0))))
 
 
+def _graph_render_operation(dataset: dict[str, list[dict[str, object]]]) -> None:
+    nodes = [
+        node
+        for node in dataset["page_graph_nodes"]
+        if node.get("seed") == "http://seed1.example.test/index.html"
+        and node.get("change_type") in {"changed", "new", "unchanged"}
+    ]
+    nodes = nodes[:120]
+    node_urls = {str(node.get("url", "")) for node in nodes}
+    by_url = {str(node.get("url", "")): node for node in nodes}
+
+    edge_x: list[float | None] = []
+    edge_y: list[float | None] = []
+    for edge in dataset["page_graph_edges"]:
+        source = str(edge.get("source", ""))
+        target = str(edge.get("target", ""))
+        if source not in node_urls or target not in node_urls:
+            continue
+        src = by_url[source]
+        tgt = by_url[target]
+        edge_x.extend([float(src.get("x", 0.0)), float(tgt.get("x", 0.0)), None])
+        edge_y.extend([float(src.get("y", 0.0)), float(tgt.get("y", 0.0)), None])
+
+    _ = {
+        "edge_points": (edge_x, edge_y),
+        "node_points": ([float(node.get("x", 0.0)) for node in nodes], [float(node.get("y", 0.0)) for node in nodes]),
+        "node_sizes": [float(node.get("size", 12.0)) for node in nodes],
+        "node_colors": [str(node.get("change_type", "unchanged")) for node in nodes],
+    }
+
+
 def benchmark_dashboard_dataset(rows: int, *, iterations: int = 7) -> DashboardBenchmarkResult:
     dataset = _generate_dataset(rows)
 
@@ -198,6 +259,7 @@ def benchmark_dashboard_dataset(rows: int, *, iterations: int = 7) -> DashboardB
         search_latency_ms=_measure_ms(lambda: _search_operation(dataset, "site1 user1"), iterations=iterations),
         filter_latency_ms=_measure_ms(lambda: _filter_operation(dataset), iterations=iterations),
         sort_latency_ms=_measure_ms(lambda: _sort_operation(dataset), iterations=iterations),
+        graph_render_ms=_measure_ms(lambda: _graph_render_operation(dataset), iterations=iterations),
     )
 
     return result
@@ -212,7 +274,7 @@ def has_regression(results: list[DashboardBenchmarkResult], *, threshold_ms: flo
     failures: list[str] = []
     for row in results:
         payload = row.as_dict()
-        for metric in ("page_load_ms", "search_latency_ms", "filter_latency_ms", "sort_latency_ms"):
+        for metric in ("page_load_ms", "search_latency_ms", "filter_latency_ms", "sort_latency_ms", "graph_render_ms"):
             value = float(payload[metric])
             if value > threshold_ms:
                 failures.append(f"rows={row.rows} metric={metric} value={value:.3f}ms threshold={threshold_ms:.3f}ms")
