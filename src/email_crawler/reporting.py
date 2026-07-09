@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections import Counter
+from collections import Counter, deque
 from datetime import datetime, timezone
 from html import escape
 from math import cos, pi, sin
@@ -219,12 +219,33 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
       <h2>Page Relationship Graph</h2>
       <div class='graph-controls'>
         <div>
+          <label for='graphLayoutMode'>Layout</label>
+          <select id='graphLayoutMode' onchange='applyGraphFilters()'>
+            <option value='force'>Force-Directed</option>
+            <option value='hierarchical'>Hierarchical</option>
+          </select>
+        </div>
+        <div>
           <label for='graphSeedFilter'>Graph Seed</label>
           <select id='graphSeedFilter' onchange='applyGraphFilters()'></select>
         </div>
         <div>
           <label for='graphDomainFilter'>Graph Domain</label>
           <select id='graphDomainFilter' onchange='applyGraphFilters()'></select>
+        </div>
+        <div>
+          <label for='graphDepthFilter'>Depth</label>
+          <select id='graphDepthFilter' onchange='applyGraphFilters()'>
+            <option value='all'>All</option>
+          </select>
+        </div>
+        <div>
+          <label for='graphLinkTypeFilter'>Link Type</label>
+          <select id='graphLinkTypeFilter' onchange='applyGraphFilters()'>
+            <option value='all'>All</option>
+            <option value='internal'>Internal</option>
+            <option value='external'>External</option>
+          </select>
         </div>
         <div>
           <label for='graphSnapshotFilter'>Snapshot Highlight</label>
@@ -259,8 +280,10 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
         <span><span class='dot dot-new'></span>New</span>
         <span><span class='dot dot-changed'></span>Changed</span>
         <span><span class='dot dot-removed'></span>Removed</span>
+        <span><span class='dot' style='background:#0ea5e9;'></span>Internal Link</span>
+        <span><span class='dot' style='background:#ef4444;'></span>External Link</span>
       </div>
-      <div class='mono'>Zoom with mouse wheel, pan by dragging, and click a node to open Page Details.</div>
+      <div class='mono'>Supports force-directed and hierarchical layouts. Zoom with mouse wheel, pan by dragging, and click a node to open Page Details.</div>
     </section>
 
     <section class='card'>
@@ -410,6 +433,7 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
       fillSelect('findingTypeFilter', payload.filters.finding_types);
       fillSelect('graphSeedFilter', payload.filters.seeds);
       fillSelect('graphDomainFilter', payload.filters.domains);
+      fillDepthSelect(payload.charts.page_graph?.depth_values || []);
       renderTypeFilters(payload.filters.finding_types || []);
 
       const search = document.getElementById('globalSearch');
@@ -430,6 +454,16 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
 
       loadFilterState();
       applyGraphFilters();
+    }}
+
+    function fillDepthSelect(depthValues) {{
+      const el = document.getElementById('graphDepthFilter');
+      if (!el) return;
+      const opts = ['<option value="all">All</option>'];
+      for (const depth of depthValues) {{
+        opts.push(`<option value="${{escapeHtml(String(depth))}}">Depth ${{escapeHtml(String(depth))}}</option>`);
+      }}
+      el.innerHTML = opts.join('');
     }}
 
     function fillSelect(id, options) {{
@@ -467,6 +501,9 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
         selectedPageUrl,
         graphSeed: document.getElementById('graphSeedFilter')?.value || 'All',
         graphDomain: document.getElementById('graphDomainFilter')?.value || 'All',
+        graphDepth: document.getElementById('graphDepthFilter')?.value || 'all',
+        graphLayoutMode: document.getElementById('graphLayoutMode')?.value || 'force',
+        graphLinkType: document.getElementById('graphLinkTypeFilter')?.value || 'all',
         graphSnapshot: document.getElementById('graphSnapshotFilter')?.value || 'all',
         graphSearch: document.getElementById('graphSearch')?.value || '',
         graphNodeLimit: document.getElementById('graphNodeLimit')?.value || '120',
@@ -487,6 +524,9 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
         if (state.search) document.getElementById('globalSearch').value = state.search;
         if (state.graphSeed) document.getElementById('graphSeedFilter').value = state.graphSeed;
         if (state.graphDomain) document.getElementById('graphDomainFilter').value = state.graphDomain;
+        if (state.graphDepth) document.getElementById('graphDepthFilter').value = state.graphDepth;
+        if (state.graphLayoutMode) document.getElementById('graphLayoutMode').value = state.graphLayoutMode;
+        if (state.graphLinkType) document.getElementById('graphLinkTypeFilter').value = state.graphLinkType;
         if (state.graphSnapshot) document.getElementById('graphSnapshotFilter').value = state.graphSnapshot;
         if (state.graphSearch) document.getElementById('graphSearch').value = state.graphSearch;
         if (state.graphNodeLimit) document.getElementById('graphNodeLimit').value = state.graphNodeLimit;
@@ -885,8 +925,11 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
 
     function renderPageGraph() {{
       const graph = payload.charts.page_graph || {{nodes: [], edges: []}};
+      const layoutMode = document.getElementById('graphLayoutMode')?.value || 'force';
       const seed = document.getElementById('graphSeedFilter')?.value || 'All';
       const domain = document.getElementById('graphDomainFilter')?.value || 'All';
+      const depthFilter = document.getElementById('graphDepthFilter')?.value || 'all';
+      const linkTypeFilter = document.getElementById('graphLinkTypeFilter')?.value || 'all';
       const snapshotFilter = document.getElementById('graphSnapshotFilter')?.value || 'all';
       const query = (document.getElementById('graphSearch')?.value || '').trim().toLowerCase();
       const limit = Number(document.getElementById('graphNodeLimit')?.value || 120);
@@ -894,6 +937,7 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
       let nodes = (graph.nodes || []).filter(node => {{
         if (seed !== 'All' && node.seed !== seed) return false;
         if (domain !== 'All' && node.domain !== domain) return false;
+        if (depthFilter !== 'all' && String(node.depth ?? '99') !== depthFilter) return false;
         if (snapshotFilter !== 'all' && node.change_type !== snapshotFilter) return false;
         if (query) {{
           const text = `${{node.url || ''}} ${{node.domain || ''}}`.toLowerCase();
@@ -904,7 +948,11 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
 
       nodes = nodes.slice(0, Math.max(20, limit));
       const nodeSet = new Set(nodes.map(node => node.url));
-      const edges = (graph.edges || []).filter(edge => nodeSet.has(edge.source) && nodeSet.has(edge.target));
+      const edges = (graph.edges || []).filter(edge => {{
+        if (!nodeSet.has(edge.source) || !nodeSet.has(edge.target)) return false;
+        if (linkTypeFilter !== 'all' && edge.edge_type !== linkTypeFilter) return false;
+        return true;
+      }});
 
       if (nodes.length === 0) {{
         Plotly.newPlot('pageGraphPlot', [{{type:'scatter', mode:'text', x:[0], y:[0], text:['No graph nodes for active filters'], textfont:{{size:14}}}}], {{
@@ -918,21 +966,35 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
       }}
 
       const byUrl = Object.fromEntries(nodes.map(node => [node.url, node]));
-      const edgeX = [];
-      const edgeY = [];
+      const edgeXInternal = [];
+      const edgeYInternal = [];
+      const edgeXExternal = [];
+      const edgeYExternal = [];
+      const useHierarchy = layoutMode === 'hierarchical';
+      const xKey = useHierarchy ? 'hier_x' : 'force_x';
+      const yKey = useHierarchy ? 'hier_y' : 'force_y';
       for (const edge of edges) {{
         const src = byUrl[edge.source];
         const tgt = byUrl[edge.target];
         if (!src || !tgt) continue;
-        edgeX.push(src.x, tgt.x, null);
-        edgeY.push(src.y, tgt.y, null);
+        const sx = Number(src[xKey] ?? src.x ?? 0);
+        const sy = Number(src[yKey] ?? src.y ?? 0);
+        const tx = Number(tgt[xKey] ?? tgt.x ?? 0);
+        const ty = Number(tgt[yKey] ?? tgt.y ?? 0);
+        if (edge.edge_type === 'external') {{
+          edgeXExternal.push(sx, tx, null);
+          edgeYExternal.push(sy, ty, null);
+        }} else {{
+          edgeXInternal.push(sx, tx, null);
+          edgeYInternal.push(sy, ty, null);
+        }}
       }}
 
       const nodeTrace = {{
         type: 'scattergl',
         mode: 'markers',
-        x: nodes.map(node => node.x),
-        y: nodes.map(node => node.y),
+        x: nodes.map(node => Number(node[xKey] ?? node.x ?? 0)),
+        y: nodes.map(node => Number(node[yKey] ?? node.y ?? 0)),
         marker: {{
           size: nodes.map(node => node.url === selectedPageUrl ? Math.min(36, (node.size || 12) + 8) : (node.size || 12)),
           color: nodes.map(node => pageGraphNodeColor(node.change_type)),
@@ -942,23 +1004,30 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
           }},
           opacity: 0.95,
         }},
-        text: nodes.map(node => `${{node.domain}}<br>${{node.url}}<br>links: ${{node.out_degree || 0}} out / ${{node.in_degree || 0}} in`),
+        text: nodes.map(node => `${{node.domain}}<br>${{node.url}}<br>depth: ${{node.depth ?? 'n/a'}}<br>links: ${{node.out_degree || 0}} out / ${{node.in_degree || 0}} in`),
         hoverinfo: 'text',
         customdata: nodes.map(node => node.url),
       }};
 
-      Plotly.newPlot('pageGraphPlot', [
-        {{type:'scattergl', mode:'lines', x:edgeX, y:edgeY, line:{{width:1, color:'rgba(59,130,246,0.25)'}}, hoverinfo:'skip'}},
-        nodeTrace,
-      ], {{
+      const traces = [];
+      traces.push({{type:'scattergl', mode:'lines', x:edgeXInternal, y:edgeYInternal, line:{{width:1.1, color:'rgba(14,165,233,0.45)'}}, hoverinfo:'skip', name:'Internal links'}});
+      traces.push({{type:'scattergl', mode:'lines', x:edgeXExternal, y:edgeYExternal, line:{{width:1.3, color:'rgba(239,68,68,0.5)'}}, hoverinfo:'skip', name:'External links'}});
+      traces.push(nodeTrace);
+
+      Plotly.newPlot('pageGraphPlot', traces, {{
         margin:{{t:20,r:10,l:20,b:20}},
         dragmode:'pan',
-        xaxis:{{visible:false}},
+        xaxis:{{visible:false, title: useHierarchy ? 'Depth' : ''}},
         yaxis:{{visible:false, scaleanchor:'x', scaleratio:1}},
+        showlegend:false,
       }}, {{responsive:true, scrollZoom:true, displaylogo:false}});
 
       const countEl = document.getElementById('pageGraphCount');
-      if (countEl) countEl.textContent = `Nodes: ${{nodes.length}} | Edges: ${{edges.length}}`;
+      if (countEl) {{
+        const internalCount = edges.filter(edge => edge.edge_type !== 'external').length;
+        const externalCount = edges.filter(edge => edge.edge_type === 'external').length;
+        countEl.textContent = `Nodes: ${{nodes.length}} | Edges: ${{edges.length}} (internal: ${{internalCount}}, external: ${{externalCount}})`;
+      }}
 
       const graphEl = document.getElementById('pageGraphPlot');
       if (graphEl) {{
@@ -1105,11 +1174,12 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
     errors: list[dict] = []
 
     graph_edges: Counter[tuple[str, str]] = Counter()
-    page_graph_edges: Counter[tuple[str, str]] = Counter()
+    page_graph_edges: Counter[tuple[str, str, str]] = Counter()
     page_graph_nodes: dict[str, dict[str, object]] = {}
     page_in_degree: Counter[str] = Counter()
     page_out_degree: Counter[str] = Counter()
     page_intel_counts: Counter[str] = Counter()
+    page_adjacency: dict[str, set[str]] = {}
     intelligence_rows: list[dict] = []
     assets_rows: list[dict] = []
     page_rows: list[dict] = []
@@ -1204,26 +1274,41 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
                 "external_links": list(finding.external_links),
             }
 
-            for link in finding.links:
-                tgt_dom = (urlsplit(link).hostname or "unknown").lower()
-                graph_edges[(src_dom, tgt_dom)] += 1
-                domain_links[tgt_dom] += 1
-                domains_filter.add(tgt_dom)
+            typed_links: list[tuple[str, str]] = []
+            typed_links.extend((link, "internal") for link in finding.internal_links)
+            typed_links.extend((link, "external") for link in finding.external_links)
+            if not typed_links:
+              typed_links.extend(
+                (
+                  link,
+                  "internal"
+                  if (urlsplit(link).hostname or "unknown").lower() == src_dom
+                  else "external",
+                )
+                for link in finding.links
+              )
 
-                target_url = link
-                page_graph_edges[(source_url, target_url)] += 1
-                page_out_degree[source_url] += 1
-                page_in_degree[target_url] += 1
-                if target_url not in page_graph_nodes:
-                    page_graph_nodes[target_url] = {
-                        "url": target_url,
-                        "label": (urlsplit(target_url).path or "/")[:72],
-                        "seed": seed,
-                        "domain": tgt_dom,
-                        "emails_count": 0,
-                        "documents_count": 0,
-                        "status": None,
-                    }
+            for link, edge_type in typed_links:
+              tgt_dom = (urlsplit(link).hostname or "unknown").lower()
+              graph_edges[(src_dom, tgt_dom)] += 1
+              domain_links[tgt_dom] += 1
+              domains_filter.add(tgt_dom)
+
+              target_url = link
+              page_graph_edges[(source_url, target_url, edge_type)] += 1
+              page_out_degree[source_url] += 1
+              page_in_degree[target_url] += 1
+              page_adjacency.setdefault(source_url, set()).add(target_url)
+              if target_url not in page_graph_nodes:
+                page_graph_nodes[target_url] = {
+                  "url": target_url,
+                  "label": (urlsplit(target_url).path or "/")[:72],
+                  "seed": seed,
+                  "domain": tgt_dom,
+                  "emails_count": 0,
+                  "documents_count": 0,
+                  "status": None,
+                }
 
             for value in finding.emails:
                 email_domain = (value.split("@", 1)[1].lower() if "@" in value else "unknown")
@@ -1443,6 +1528,43 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
           return 0
       return 0
 
+    page_depth: dict[str, int] = {}
+    seed_start_nodes: dict[str, list[str]] = {}
+    for url, node in page_graph_nodes.items():
+      seed = str(node.get("seed") or "")
+      if not seed:
+        continue
+      if url == seed:
+        seed_start_nodes.setdefault(seed, []).append(url)
+
+    if not seed_start_nodes:
+      for url, node in page_graph_nodes.items():
+        seed = str(node.get("seed") or "")
+        if seed:
+          seed_start_nodes.setdefault(seed, []).append(url)
+
+    for starts in seed_start_nodes.values():
+      queue: deque[str] = deque()
+      chosen = sorted(set(starts))[:3]
+      for start in chosen:
+        if start not in page_depth:
+          page_depth[start] = 0
+          queue.append(start)
+      while queue:
+        current = queue.popleft()
+        current_depth = page_depth.get(current, 0)
+        for nxt in sorted(page_adjacency.get(current, set())):
+          next_depth = current_depth + 1
+          prev = page_depth.get(nxt)
+          if prev is None or next_depth < prev:
+            page_depth[nxt] = next_depth
+            queue.append(nxt)
+
+    for url in page_graph_nodes:
+      if url not in page_depth:
+        parts = [part for part in (urlsplit(url).path or "").split("/") if part]
+        page_depth[url] = min(9, len(parts))
+
     page_graph_scored_nodes: list[dict[str, object]] = []
     for url, node in page_graph_nodes.items():
       in_degree = int(page_in_degree.get(url, 0))
@@ -1450,8 +1572,9 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
       intel_count = int(page_intel_counts.get(url, 0))
       emails_count = _coerce_int(node.get("emails_count", 0))
       documents_count = _coerce_int(node.get("documents_count", 0))
+      depth = int(page_depth.get(url, 0))
       degree_total = in_degree + out_degree
-      score = (degree_total * 3) + emails_count + documents_count + intel_count
+      score = (degree_total * 3) + emails_count + documents_count + intel_count - depth
       page_graph_scored_nodes.append(
         {
           "url": url,
@@ -1463,6 +1586,7 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
           "intel_count": intel_count,
           "emails_count": emails_count,
           "documents_count": documents_count,
+          "depth": depth,
           "change_type": snapshot_change_map.get(url, "unchanged"),
           "size": 10 + min(24, degree_total + emails_count + documents_count),
           "score": score,
@@ -1470,46 +1594,128 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
       )
 
     page_graph_scored_nodes.sort(key=lambda item: (_coerce_int(item["score"]), str(item["url"])), reverse=True)
-    page_graph_nodes_limited = page_graph_scored_nodes[:600]
+    page_graph_nodes_limited = page_graph_scored_nodes[:420]
     page_graph_node_urls = {str(node["url"]) for node in page_graph_nodes_limited}
+
+    page_graph_edges_rows: list[dict[str, object]] = []
+    for (source, target, edge_type), weight in page_graph_edges.most_common(3200):
+      if source in page_graph_node_urls and target in page_graph_node_urls:
+        page_graph_edges_rows.append(
+          {
+            "source": source,
+            "target": target,
+            "edge_type": edge_type,
+            "weight": int(weight),
+          }
+        )
 
     domains_for_layout = sorted({str(node["domain"]) for node in page_graph_nodes_limited})
     domain_positions = {
       domain: (
-        1.45 * cos((2 * pi * idx) / max(1, len(domains_for_layout))),
-        1.45 * sin((2 * pi * idx) / max(1, len(domains_for_layout))),
+        1.5 * cos((2 * pi * idx) / max(1, len(domains_for_layout))),
+        1.5 * sin((2 * pi * idx) / max(1, len(domains_for_layout))),
       )
       for idx, domain in enumerate(domains_for_layout)
     }
 
+    node_urls = [str(node["url"]) for node in page_graph_nodes_limited]
+
+    force_positions: dict[str, list[float]] = {}
     by_domain: dict[str, list[dict[str, object]]] = {}
     for node in page_graph_nodes_limited:
       by_domain.setdefault(str(node["domain"]), []).append(node)
     for domain_nodes in by_domain.values():
       domain_nodes.sort(key=lambda item: str(item["url"]))
-
-    page_graph_nodes_with_layout: list[dict[str, object]] = []
     for domain in sorted(by_domain):
       cx, cy = domain_positions.get(domain, (0.0, 0.0))
       domain_nodes = by_domain[domain]
       total = max(1, len(domain_nodes))
       for idx, node in enumerate(domain_nodes):
         angle = (2 * pi * idx) / total
-        radius = 0.4 + (0.12 * min(3, idx // 15))
-        node["x"] = round(cx + (radius * cos(angle)), 6)
-        node["y"] = round(cy + (radius * sin(angle)), 6)
-        page_graph_nodes_with_layout.append(node)
+        radius = 0.35 + (0.08 * min(4, idx // 14))
+        force_positions[str(node["url"])] = [cx + (radius * cos(angle)), cy + (radius * sin(angle))]
 
-    page_graph_edges_rows: list[dict[str, object]] = []
-    for (source, target), weight in page_graph_edges.most_common(2500):
-      if source in page_graph_node_urls and target in page_graph_node_urls:
-        page_graph_edges_rows.append(
-          {
-            "source": source,
-            "target": target,
-            "weight": int(weight),
-          }
-        )
+    edges_for_layout = [
+      (str(edge["source"]), str(edge["target"]), _coerce_int(edge["weight"]))
+      for edge in page_graph_edges_rows
+      if str(edge["source"]) in force_positions and str(edge["target"]) in force_positions
+    ]
+
+    if node_urls:
+      repulsion = 0.028
+      spring_k = 0.035
+      ideal_len = 0.9
+      damping = 0.78
+      for _ in range(26):
+        disp = {url: [0.0, 0.0] for url in node_urls}
+
+        for idx, a in enumerate(node_urls):
+          ax, ay = force_positions[a]
+          for b in node_urls[idx + 1 :]:
+            bx, by = force_positions[b]
+            dx = ax - bx
+            dy = ay - by
+            dist2 = (dx * dx) + (dy * dy) + 1e-6
+            dist = dist2**0.5
+            push = repulsion / dist2
+            fx = (dx / dist) * push
+            fy = (dy / dist) * push
+            disp[a][0] += fx
+            disp[a][1] += fy
+            disp[b][0] -= fx
+            disp[b][1] -= fy
+
+        for source, target, weight in edges_for_layout:
+          sx, sy = force_positions[source]
+          tx, ty = force_positions[target]
+          dx = tx - sx
+          dy = ty - sy
+          dist = ((dx * dx) + (dy * dy) + 1e-6) ** 0.5
+          spring = spring_k * (dist - ideal_len) * min(3.0, 1.0 + (weight * 0.2))
+          fx = (dx / dist) * spring
+          fy = (dy / dist) * spring
+          disp[source][0] += fx
+          disp[source][1] += fy
+          disp[target][0] -= fx
+          disp[target][1] -= fy
+
+        for url in node_urls:
+          fx, fy = disp[url]
+          force_positions[url][0] += max(-0.2, min(0.2, fx * damping))
+          force_positions[url][1] += max(-0.2, min(0.2, fy * damping))
+
+    depth_groups: dict[int, list[dict[str, object]]] = {}
+    for node in page_graph_nodes_limited:
+      depth_groups.setdefault(_coerce_int(node.get("depth", 0)), []).append(node)
+    domain_rank = {domain: idx for idx, domain in enumerate(domains_for_layout)}
+
+    max_depth = 0
+    depth_values: list[int] = []
+    for depth in sorted(depth_groups):
+      nodes_at_depth = depth_groups[depth]
+      nodes_at_depth.sort(key=lambda item: (str(item.get("domain") or ""), str(item["url"])))
+      depth_values.append(depth)
+      max_depth = max(max_depth, depth)
+      total = max(1, len(nodes_at_depth))
+      for idx, node in enumerate(nodes_at_depth):
+        base_y = (idx - ((total - 1) / 2.0)) * 0.52
+        offset = ((domain_rank.get(str(node.get("domain") or ""), 0) % 5) - 2) * 0.07
+        node["hier_x"] = round(depth * 1.08, 6)
+        node["hier_y"] = round(base_y + offset, 6)
+
+    page_graph_nodes_with_layout: list[dict[str, object]] = []
+    for node in page_graph_nodes_limited:
+      url = str(node["url"])
+      fx, fy = force_positions.get(url, [0.0, 0.0])
+      node["force_x"] = round(fx, 6)
+      node["force_y"] = round(fy, 6)
+      node["x"] = node["force_x"]
+      node["y"] = node["force_y"]
+      if "hier_x" not in node:
+        node["hier_x"] = 0.0
+      if "hier_y" not in node:
+        node["hier_y"] = 0.0
+      page_graph_nodes_with_layout.append(node)
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -1611,6 +1817,8 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
             "page_graph": {
               "nodes": page_graph_nodes_with_layout,
               "edges": page_graph_edges_rows,
+              "depth_values": depth_values,
+              "max_depth": max_depth,
             },
         },
     }

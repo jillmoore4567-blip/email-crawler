@@ -86,19 +86,36 @@ def _generate_dataset(rows: int) -> dict[str, list[dict[str, object]]]:
                 "domain": domain,
                 "seed": seed,
                 "change_type": change_type,
+                "depth": i % 6,
                 "size": 10 + (i % 8),
-                "x": round((i % 100) * 0.05, 4),
-                "y": round((i // 100) * 0.05, 4),
+                "force_x": round((i % 100) * 0.05, 4),
+                "force_y": round((i // 100) * 0.05, 4),
+                "hier_x": round((i % 6) * 1.0, 4),
+                "hier_y": round(((i // 6) % 80) * 0.08, 4),
             }
         )
         if i > 0:
             prev_domain = domains[(i - 1) % len(domains)]
             prev_url = f"https://{prev_domain}/page-{i - 1}.html"
-            page_graph_edges.append({"source": prev_url, "target": page_url, "weight": 1})
+            page_graph_edges.append(
+                {
+                    "source": prev_url,
+                    "target": page_url,
+                    "weight": 1,
+                    "edge_type": "internal" if prev_domain == domain else "external",
+                }
+            )
         if i > 4:
             parent_domain = domains[(i - 5) % len(domains)]
             parent_url = f"https://{parent_domain}/page-{i - 5}.html"
-            page_graph_edges.append({"source": parent_url, "target": page_url, "weight": 1})
+            page_graph_edges.append(
+                {
+                    "source": parent_url,
+                    "target": page_url,
+                    "weight": 1,
+                    "edge_type": "internal" if parent_domain == domain else "external",
+                }
+            )
 
         email_rows.append(
             {
@@ -224,28 +241,67 @@ def _graph_render_operation(dataset: dict[str, list[dict[str, object]]]) -> None
         node
         for node in dataset["page_graph_nodes"]
         if node.get("seed") == "http://seed1.example.test/index.html"
+        and node.get("domain") in {"site1.example.test", "site2.example.test", "site3.example.test"}
+        and int(node.get("depth", 0)) <= 4
         and node.get("change_type") in {"changed", "new", "unchanged"}
     ]
     nodes = nodes[:120]
     node_urls = {str(node.get("url", "")) for node in nodes}
     by_url = {str(node.get("url", "")): node for node in nodes}
 
-    edge_x: list[float | None] = []
-    edge_y: list[float | None] = []
+    force_internal_x: list[float | None] = []
+    force_internal_y: list[float | None] = []
+    force_external_x: list[float | None] = []
+    force_external_y: list[float | None] = []
+    hier_internal_x: list[float | None] = []
+    hier_internal_y: list[float | None] = []
+    hier_external_x: list[float | None] = []
+    hier_external_y: list[float | None] = []
+
     for edge in dataset["page_graph_edges"]:
         source = str(edge.get("source", ""))
         target = str(edge.get("target", ""))
         if source not in node_urls or target not in node_urls:
             continue
+        if edge.get("edge_type") not in {"internal", "external"}:
+            continue
         src = by_url[source]
         tgt = by_url[target]
-        edge_x.extend([float(src.get("x", 0.0)), float(tgt.get("x", 0.0)), None])
-        edge_y.extend([float(src.get("y", 0.0)), float(tgt.get("y", 0.0)), None])
+        sfx = float(src.get("force_x", 0.0))
+        sfy = float(src.get("force_y", 0.0))
+        tfx = float(tgt.get("force_x", 0.0))
+        tfy = float(tgt.get("force_y", 0.0))
+        shx = float(src.get("hier_x", 0.0))
+        shy = float(src.get("hier_y", 0.0))
+        thx = float(tgt.get("hier_x", 0.0))
+        thy = float(tgt.get("hier_y", 0.0))
+
+        if edge.get("edge_type") == "external":
+            force_external_x.extend([sfx, tfx, None])
+            force_external_y.extend([sfy, tfy, None])
+            hier_external_x.extend([shx, thx, None])
+            hier_external_y.extend([shy, thy, None])
+        else:
+            force_internal_x.extend([sfx, tfx, None])
+            force_internal_y.extend([sfy, tfy, None])
+            hier_internal_x.extend([shx, thx, None])
+            hier_internal_y.extend([shy, thy, None])
 
     _ = {
-        "edge_points": (edge_x, edge_y),
-        "node_points": ([float(node.get("x", 0.0)) for node in nodes], [float(node.get("y", 0.0)) for node in nodes]),
+        "force_internal_edge_points": (force_internal_x, force_internal_y),
+        "force_external_edge_points": (force_external_x, force_external_y),
+        "hier_internal_edge_points": (hier_internal_x, hier_internal_y),
+        "hier_external_edge_points": (hier_external_x, hier_external_y),
+        "force_node_points": (
+            [float(node.get("force_x", 0.0)) for node in nodes],
+            [float(node.get("force_y", 0.0)) for node in nodes],
+        ),
+        "hier_node_points": (
+            [float(node.get("hier_x", 0.0)) for node in nodes],
+            [float(node.get("hier_y", 0.0)) for node in nodes],
+        ),
         "node_sizes": [float(node.get("size", 12.0)) for node in nodes],
+        "node_depths": [int(node.get("depth", 0)) for node in nodes],
         "node_colors": [str(node.get("change_type", "unchanged")) for node in nodes],
     }
 

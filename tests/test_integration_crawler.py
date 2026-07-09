@@ -354,6 +354,17 @@ async def test_end_to_end_cli_outputs_with_synthetic_site(tmp_path: Path, unused
         assert "renderPageGraph()" in report_html
         assert "plotly_click" in report_html
         assert "click a node to open Page Details" in report_html
+        assert "graphLayoutMode" in report_html
+        assert "Force-Directed" in report_html
+        assert "Hierarchical" in report_html
+        assert "graphDepthFilter" in report_html
+        assert "graphLinkTypeFilter" in report_html
+        assert "Internal Link" in report_html
+        assert "External Link" in report_html
+        assert "edge.edge_type === 'external'" in report_html
+        assert "node.depth" in report_html
+        assert "force_x" in report_html
+        assert "hier_x" in report_html
 
         conn = sqlite3.connect(out_sqlite)
         try:

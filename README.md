@@ -101,7 +101,9 @@ Core options:
   - Email Domain Distribution chart
   - Document Type Distribution chart
   - Crawl Timing chart (fetch/extraction/intelligence/robots/wait)
-  - Page Relationship Graph with zoom, pan, selection, and snapshot-change highlighting
+  - Page Relationship Graph with force-directed and hierarchical layouts
+  - Graph controls for seed/domain/depth filters and snapshot-change highlighting
+  - Internal vs external link color coding with clickable nodes that open Page Details
 - Global search filters all findings tables.
 - Page Details panel shows all extracted artifacts for the selected page.
 - Charts can be exported as PNG or SVG.
@@ -161,15 +163,18 @@ measures:
 - sort latency
 - page graph render latency
 
+Graph benchmark covers both force-directed and hierarchical coordinate rendering paths,
+plus internal/external edge partitioning and depth-filtered graph subsets.
+
 Target threshold per operation is 200 ms.
 
 Latest local dashboard benchmark results:
 
 | Rows | Page load (ms) | Search (ms) | Filter (ms) | Sort (ms) | Graph render (ms) |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| 1000 | 6.495 | 0.402 | 0.283 | 0.725 | 0.428 |
-| 5000 | 12.812 | 2.721 | 2.253 | 4.741 | 1.499 |
-| 10000 | 12.954 | 6.126 | 5.322 | 11.842 | 4.031 |
+| 1000 | 5.402 | 0.456 | 0.267 | 0.656 | 0.328 |
+| 5000 | 10.981 | 2.367 | 2.030 | 5.189 | 1.894 |
+| 10000 | 12.418 | 5.571 | 5.073 | 11.830 | 4.338 |
 
 All operations are below the 200 ms threshold.
 
