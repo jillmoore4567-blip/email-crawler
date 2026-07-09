@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from email_crawler.crawler import CrawlResult, PageFinding
-from email_crawler.storage import compare_run_with_previous, persist_results_sqlite
+from email_crawler.storage import compare_run_with_previous, load_latest_links_by_source, persist_results_sqlite
 
 
 LATEST_SCHEMA_VERSION = 3
@@ -117,6 +117,34 @@ def test_incremental_unchanged_pages_not_marked_removed(tmp_path: Path) -> None:
     assert diff["previous_run_id"] == run1
     assert diff["removed_pages"] == 0
     assert diff["removed_findings"] == 0
+
+
+def test_incremental_unchanged_pages_preserve_links_for_future_runs(tmp_path: Path) -> None:
+    db_path = tmp_path / "findings.db"
+    seed = "https://example.test"
+    page_url = "https://example.test/index.html"
+    linked_url = "https://example.test/about.html"
+
+    first = _make_result(
+        seed=seed,
+        page_url=page_url,
+        title="Home",
+        emails=["info@example.test"],
+        links=[linked_url],
+    )
+    persist_results_sqlite([first], str(db_path), config_payload={"incremental": False})
+
+    second = CrawlResult(seed_url=seed)
+    now = datetime.now(timezone.utc)
+    second.started_at = now
+    second.finished_at = now
+    second.unchanged_pages_skipped = 1
+    second.unchanged_urls = {page_url}
+    persist_results_sqlite([second], str(db_path), config_payload={"incremental": True})
+
+    latest_links = load_latest_links_by_source(str(db_path))
+
+    assert latest_links[page_url] == [linked_url]
 
 
 def test_legacy_database_is_upgraded_by_migration_runner(tmp_path: Path) -> None:

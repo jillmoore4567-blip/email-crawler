@@ -584,6 +584,22 @@ def _carry_forward_unchanged_pages(
         for finding_type, finding_id in prev_findings:
             _add_finding(current_finding_ids, str(finding_type), str(finding_id))
 
+        prev_links = conn.execute(
+            """
+            SELECT target_url
+            FROM links
+            WHERE run_id = ? AND source_url = ?
+            """,
+            (previous_run_id, url),
+        ).fetchall()
+        for (target_url,) in prev_links:
+            if not target_url:
+                continue
+            conn.execute(
+                "INSERT OR IGNORE INTO links (run_id, source_url, target_url) VALUES (?, ?, ?)",
+                (current_run_id, url, str(target_url)),
+            )
+
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, column_type: str) -> None:
     info = conn.execute(f"PRAGMA table_info({table})").fetchall()
