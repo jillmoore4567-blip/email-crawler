@@ -119,12 +119,15 @@ Migrations are applied in-order from [src/email_crawler/migrations](src/email_cr
 - `002_add_runs.sql`
 - `003_page_snapshots.sql`
 - `004_provenance_layer.sql`
+- `005_snapshot_timeline_indexes.sql`
 
 The migration path preserves legacy data, is idempotent, and tracks
 final state in `schema_version`.
 
 Provenance fields and stable IDs are documented in
 [docs/PROVENANCE_MODEL.md](docs/PROVENANCE_MODEL.md).
+Historical snapshot retrieval strategy is documented in
+[docs/HISTORICAL_SNAPSHOTS_DESIGN.md](docs/HISTORICAL_SNAPSHOTS_DESIGN.md).
 
 ## Plugin System
 

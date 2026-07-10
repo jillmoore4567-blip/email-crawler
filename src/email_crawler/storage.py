@@ -527,6 +527,124 @@ def load_latest_links_by_source(db_path: str) -> dict[str, list[str]]:
         conn.close()
 
 
+def load_page_snapshot_timeline(db_path: str, *, seed_url: str, page_url: str) -> list[dict[str, Any]]:
+    path = Path(db_path)
+    if not path.exists():
+        return []
+
+    conn = sqlite3.connect(path)
+    try:
+        _apply_migrations(conn)
+        page_uid = _stable_page_uid(seed_url, page_url)
+        rows = conn.execute(
+            """
+            SELECT
+                ps.run_id,
+                cr.run_uid,
+                cr.started_at,
+                cr.completed_at,
+                p.seed_url,
+                p.page_uid,
+                p.url,
+                IFNULL(ps.title, ''),
+                IFNULL(ps.content_hash, ''),
+                IFNULL(ps.http_status, 0),
+                p.first_seen,
+                p.last_seen,
+                ps.last_seen,
+                p.crawled_at
+            FROM page_snapshots ps
+            JOIN pages p ON p.id = ps.page_id
+            JOIN crawl_runs cr ON cr.run_id = ps.run_id
+            WHERE p.page_uid = ?
+            ORDER BY cr.completed_at ASC, ps.snapshot_id ASC
+            """,
+            (page_uid,),
+        ).fetchall()
+        return [
+            {
+                "run_id": str(run_id),
+                "run_uid": str(run_uid),
+                "started_at": str(started_at),
+                "completed_at": str(completed_at),
+                "seed_url": str(row_seed_url),
+                "page_uid": str(row_page_uid),
+                "url": str(url),
+                "title": str(title),
+                "content_hash": str(content_hash),
+                "http_status": int(http_status),
+                "first_seen": str(first_seen),
+                "last_seen": str(last_seen),
+                "snapshot_seen_at": str(snapshot_seen_at),
+                "crawled_at": str(crawled_at),
+            }
+            for (
+                run_id,
+                run_uid,
+                started_at,
+                completed_at,
+                row_seed_url,
+                row_page_uid,
+                url,
+                title,
+                content_hash,
+                http_status,
+                first_seen,
+                last_seen,
+                snapshot_seen_at,
+                crawled_at,
+            ) in rows
+        ]
+    finally:
+        conn.close()
+
+
+def load_finding_snapshot_timeline(
+    db_path: str,
+    *,
+    finding_type: str,
+    finding_id: str,
+) -> list[dict[str, Any]]:
+    path = Path(db_path)
+    if not path.exists():
+        return []
+
+    conn = sqlite3.connect(path)
+    try:
+        _apply_migrations(conn)
+        rows = conn.execute(
+            """
+            SELECT
+                fs.run_id,
+                cr.run_uid,
+                cr.started_at,
+                cr.completed_at,
+                fs.finding_type,
+                fs.finding_id,
+                fs.status
+            FROM finding_snapshots fs
+            JOIN crawl_runs cr ON cr.run_id = fs.run_id
+            WHERE fs.finding_type = ? AND fs.finding_id = ?
+            ORDER BY cr.completed_at ASC, fs.snapshot_id ASC
+            """,
+            (finding_type, finding_id),
+        ).fetchall()
+        return [
+            {
+                "run_id": str(run_id),
+                "run_uid": str(run_uid),
+                "started_at": str(started_at),
+                "completed_at": str(completed_at),
+                "finding_type": str(row_finding_type),
+                "finding_id": str(row_finding_id),
+                "status": str(status),
+            }
+            for run_id, run_uid, started_at, completed_at, row_finding_type, row_finding_id, status in rows
+        ]
+    finally:
+        conn.close()
+
+
 def _add_finding(store: dict[str, set[str]], finding_type: str, finding_id: str) -> None:
     store.setdefault(finding_type, set()).add(finding_id)
 
