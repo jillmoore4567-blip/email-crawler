@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import logging
 from pathlib import Path
@@ -17,7 +18,8 @@ from .io_utils import (
     write_snapshot_diff_json,
     write_stats_json,
 )
-from .reporting import write_html_report
+from .live_monitor import LiveMonitorServer
+from .reporting import write_html_report, write_live_monitor_page
 from .storage import (
     compare_run_with_previous,
     load_latest_links_by_source,
@@ -246,6 +248,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--out-sqlite", default="output/findings.db", help="Output sqlite database path")
     parser.add_argument("--out-html", default="output/report.html", help="Output HTML report path")
+    parser.add_argument(
+        "--out-live-monitor-html",
+        default="output/live_monitor.html",
+        help="Output standalone live monitor HTML page path",
+    )
+    parser.add_argument(
+        "--serve-live-monitor",
+        action="store_true",
+        help="Serve output directory with live WebSocket monitor endpoint during crawl",
+    )
+    parser.add_argument(
+        "--live-monitor-host",
+        default="127.0.0.1",
+        help="Host interface for live monitor server",
+    )
+    parser.add_argument(
+        "--live-monitor-port",
+        type=int,
+        default=8765,
+        help="Port for live monitor server",
+    )
+    parser.add_argument(
+        "--live-monitor-token",
+        default="",
+        help="Optional bearer token for live monitor API/WebSocket endpoints",
+    )
+    parser.add_argument(
+        "--out-live-stream",
+        default="output/crawl_live_stream.jsonl",
+        help="Output NDJSON event stream for live crawl monitoring",
+    )
 
     return parser
 
@@ -264,6 +297,12 @@ async def run(args: argparse.Namespace) -> int:
         retry_statuses = (429, 500, 502, 503, 504)
 
     allowlist = tuple(item.strip().lower() for item in args.allow_domain if item.strip())
+    out_live_stream = getattr(args, "out_live_stream", "output/crawl_live_stream.jsonl")
+    out_live_monitor_html = getattr(args, "out_live_monitor_html", "output/live_monitor.html")
+    serve_live_monitor = bool(getattr(args, "serve_live_monitor", False))
+    live_monitor_host = str(getattr(args, "live_monitor_host", "127.0.0.1"))
+    live_monitor_port = int(getattr(args, "live_monitor_port", 8765))
+    live_monitor_token = str(getattr(args, "live_monitor_token", ""))
     if not allowlist and not args.cross_domain:
         # If no explicit allowlist is provided, use seed domains.
         from urllib.parse import urlsplit
@@ -315,14 +354,35 @@ async def run(args: argparse.Namespace) -> int:
         checkpoint_every_pages=max(1, args.checkpoint_every_pages),
         allowed_domains=allowlist if not args.cross_domain else (),
         incremental_crawl=bool(args.incremental),
+        live_stream_path=out_live_stream,
     )
 
     if config.incremental_crawl:
         config.previous_content_hashes = load_latest_page_hashes(args.out_sqlite)
         config.previous_links_by_source = load_latest_links_by_source(args.out_sqlite)
 
+    write_live_monitor_page(out_live_stream, out_live_monitor_html, auth_token=live_monitor_token)
+
+    output_dir = str(Path(args.out_html).resolve().parent)
+    monitor_server: LiveMonitorServer | None = None
+    if serve_live_monitor:
+        monitor_server = LiveMonitorServer(
+            out_live_stream,
+            output_dir,
+            host=live_monitor_host,
+            port=live_monitor_port,
+            auth_token=live_monitor_token,
+        )
+        await monitor_server.start()
+        print(f"Live monitor URL: {monitor_server.base_url}/{Path(out_live_monitor_html).name}")
+
     crawler = AsyncOsintCrawler(config)
-    results = await crawler.crawl_many(seeds)
+    try:
+        results = await crawler.crawl_many(seeds)
+    finally:
+        if monitor_server is not None:
+            with contextlib.suppress(Exception):
+                await monitor_server.stop()
 
     total_emails = write_emails_txt(results, args.out_emails)
     write_results_json(results, args.out_json)
@@ -344,7 +404,13 @@ async def run(args: argparse.Namespace) -> int:
     snapshot_diff = compare_run_with_previous(args.out_sqlite, run_id)
     write_snapshot_diff_json(snapshot_diff, args.out_snapshot_diff)
     stats = write_stats_json(results, args.out_stats, snapshot_diff=snapshot_diff)
-    write_html_report(results, stats, args.out_html)
+    write_html_report(
+        results,
+        stats,
+        args.out_html,
+        live_stream_path=out_live_stream,
+        live_monitor_token=live_monitor_token,
+    )
 
     print("=== Crawl Complete ===")
     print(f"Seeds processed : {stats['seeds_processed']}")
@@ -374,6 +440,8 @@ async def run(args: argparse.Namespace) -> int:
     print(f"Snapshot diff   : {Path(args.out_snapshot_diff).resolve()}")
     print(f"SQLite output   : {Path(args.out_sqlite).resolve()} (run_id={run_id})")
     print(f"HTML report     : {Path(args.out_html).resolve()}")
+    print(f"Live stream     : {Path(out_live_stream).resolve()}")
+    print(f"Live monitor    : {Path(out_live_monitor_html).resolve()}")
 
     return 0
 

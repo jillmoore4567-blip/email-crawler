@@ -80,6 +80,7 @@ class CrawlConfig:
     incremental_crawl: bool = False
     previous_content_hashes: dict[str, str] = field(default_factory=dict)
     previous_links_by_source: dict[str, list[str]] = field(default_factory=dict)
+    live_stream_path: str = ""
 
 
 @dataclass(slots=True)
@@ -343,8 +344,15 @@ class AsyncOsintCrawler:
             self._canonicalize_url,
             collect_javascript_assets=self.config.collect_javascript_assets,
         )
+        self._stream_sequence = 0
+        self._live_stream_file: Path | None = None
+        if self.config.live_stream_path:
+            self._live_stream_file = Path(self.config.live_stream_path)
+            self._live_stream_file.parent.mkdir(parents=True, exist_ok=True)
+            self._live_stream_file.write_text("", encoding="utf-8")
 
     async def crawl_many(self, seed_urls: Iterable[str]) -> list[CrawlResult]:
+        seeds = list(seed_urls)
         timeout = aiohttp.ClientTimeout(total=self.config.timeout_seconds)
         connector = aiohttp.TCPConnector(limit=max(10, self.config.concurrency * 2))
         headers = {"User-Agent": self.config.user_agent}
@@ -352,9 +360,17 @@ class AsyncOsintCrawler:
         if self.config.thread_pool_workers > 0:
             self._executor = ThreadPoolExecutor(max_workers=self.config.thread_pool_workers)
 
+        self._emit_live_event(
+            "crawl_started",
+            seed_count=len(seeds),
+            concurrency=self.config.concurrency,
+            max_depth=self.config.max_depth,
+            max_pages_per_seed=self.config.max_pages_per_seed,
+        )
+
         try:
             async with aiohttp.ClientSession(timeout=timeout, connector=connector, headers=headers) as session:
-                tasks = [self._crawl_seed(session, self._canonicalize_url(seed)) for seed in seed_urls]
+                tasks = [self._crawl_seed(session, self._canonicalize_url(seed)) for seed in seeds]
                 results = await asyncio.gather(*tasks)
         finally:
             if self._executor is not None:
@@ -369,6 +385,13 @@ class AsyncOsintCrawler:
             errors=sum(len(r.errors) for r in results),
             retries=sum(r.retries for r in results),
             duplicates=sum(r.duplicate_pages for r in results),
+        )
+        self._emit_live_event(
+            "crawl_completed",
+            seeds=len(results),
+            pages=sum(r.pages_crawled for r in results),
+            errors=sum(len(r.errors) for r in results),
+            retries=sum(r.retries for r in results),
         )
         return results
 
@@ -393,6 +416,12 @@ class AsyncOsintCrawler:
             content_hashes = set()
             result = CrawlResult(seed_url=seed_url)
             result.dns_records = self._dns_extractor.resolve_host(seed_url)
+        self._emit_live_event(
+            "seed_started",
+            seed=seed_url,
+            queue_depth=len(queue),
+            pages_crawled=result.pages_crawled,
+        )
         result.performance.queue_max_size = max(result.performance.queue_max_size, len(queue))
 
         seed_host = (urlsplit(seed_url).hostname or "").lower()
@@ -454,9 +483,22 @@ class AsyncOsintCrawler:
             result.visited_urls.add(current_url)
 
             if non_html:
+                self._emit_live_event(
+                    "non_html_skipped",
+                    seed=seed_url,
+                    url=current_url,
+                    queue_depth=len(queue),
+                )
                 result.non_html_skipped += 1
                 continue
             if error:
+                self._emit_live_event(
+                    "request_error",
+                    seed=seed_url,
+                    url=current_url,
+                    error=error,
+                    queue_depth=len(queue),
+                )
                 result.errors.append(error)
                 continue
             if not html:
@@ -481,10 +523,23 @@ class AsyncOsintCrawler:
                             queue.append((link, depth + 1))
                             enqueued.add(link)
                     result.performance.queue_max_size = max(result.performance.queue_max_size, len(queue))
+                    self._emit_live_event(
+                        "page_unchanged",
+                        seed=seed_url,
+                        url=current_url,
+                        queue_depth=len(queue),
+                        pages_crawled=result.pages_crawled,
+                    )
                     continue
 
             if self.config.dedupe_content and content_hash in content_hashes:
                 result.duplicate_pages += 1
+                self._emit_live_event(
+                    "duplicate_page_skipped",
+                    seed=seed_url,
+                    url=current_url,
+                    queue_depth=len(queue),
+                )
                 continue
             content_hashes.add(content_hash)
 
@@ -517,6 +572,18 @@ class AsyncOsintCrawler:
 
             result.page_findings.append(finding)
             result.pages_crawled += 1
+            self._emit_live_event(
+                "page_crawled",
+                seed=seed_url,
+                url=current_url,
+                depth=depth,
+                status=finding.http_status,
+                queue_depth=len(queue),
+                pages_crawled=result.pages_crawled,
+                links_found=len(finding.links),
+                emails_found=len(finding.emails),
+                documents_found=len(finding.documents),
+            )
 
             for link in finding.links:
                 if link in result.discovered_links:
@@ -562,6 +629,14 @@ class AsyncOsintCrawler:
             robots_time_seconds=round(result.performance.robots_time_seconds, 3),
             rate_limit_wait_seconds=round(result.performance.rate_limit_wait_seconds, 3),
             duration_seconds=round(result.duration_seconds, 2),
+        )
+        self._emit_live_event(
+            "seed_completed",
+            seed=result.seed_url,
+            pages=result.pages_crawled,
+            errors=len(result.errors),
+            retries=result.retries,
+            duration_seconds=round(result.duration_seconds, 3),
         )
         return result
 
@@ -932,6 +1007,19 @@ class AsyncOsintCrawler:
     def _log_struct(self, event: str, **fields: Any) -> None:
         record = {"event": event, **fields}
         logger.info(json.dumps(record, sort_keys=True))
+
+    def _emit_live_event(self, event: str, **fields: Any) -> None:
+        if self._live_stream_file is None:
+            return
+        self._stream_sequence += 1
+        payload = {
+            "sequence": self._stream_sequence,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "event": event,
+            **fields,
+        }
+        with self._live_stream_file.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, sort_keys=True) + "\n")
 
 
 AsyncEmailCrawler = AsyncOsintCrawler

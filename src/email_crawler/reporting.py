@@ -11,8 +11,90 @@ from urllib.parse import urlsplit
 from .crawler import CrawlResult
 
 
-def write_html_report(results: list[CrawlResult], stats: dict, output_path: str) -> None:
-    payload = _build_dashboard_payload(results, stats)
+SEVERITY_ORDER = ["info", "low", "medium", "high", "critical"]
+SEVERITY_WEIGHTS = {
+  "info": 2,
+  "low": 8,
+  "medium": 18,
+  "high": 35,
+  "critical": 55,
+}
+
+
+def _severity_rank(level: str) -> int:
+  try:
+    return SEVERITY_ORDER.index(level)
+  except ValueError:
+    return 0
+
+
+def _infer_severity(finding_type: str, details_text: str = "") -> str:
+  token = f"{finding_type} {details_text}".lower()
+
+  if any(item in token for item in ("api_key", "secret", "token", "credential", "password")):
+    return "critical"
+  if any(item in token for item in ("admin", "exposed", "directory_listing", "backup")):
+    return "high"
+  if any(item in token for item in ("metadata", "broken_link", "broken", "document", "pdf")):
+    return "medium"
+  if any(item in token for item in ("email", "phone", "contact")):
+    return "low"
+  if any(item in token for item in ("security.txt", "robots.txt", "sitemap")):
+    return "info"
+  return "low"
+
+
+def _compute_risk_summary(rows: list[dict], pages_crawled: int) -> dict:
+  counts = {level: 0 for level in SEVERITY_ORDER}
+  for row in rows:
+    sev = str(row.get("severity") or "low").lower()
+    if sev not in counts:
+      sev = "low"
+    counts[sev] += 1
+
+  weighted = sum(counts[level] * SEVERITY_WEIGHTS[level] for level in SEVERITY_ORDER)
+  capacity = max(1, pages_crawled) * SEVERITY_WEIGHTS["critical"]
+  score = min(100, round((weighted / capacity) * 100))
+
+  if score >= 70:
+    exposure = "CRITICAL"
+  elif score >= 50:
+    exposure = "HIGH"
+  elif score >= 25:
+    exposure = "MEDIUM"
+  else:
+    exposure = "LOW"
+
+  return {
+    "score": score,
+    "exposure": exposure,
+    "counts": counts,
+    "weighted": weighted,
+  }
+
+
+def write_html_report(
+  results: list[CrawlResult],
+  stats: dict,
+  output_path: str,
+  *,
+  live_stream_path: str = "",
+  live_monitor_token: str = "",
+) -> None:
+  payload = _build_dashboard_payload(
+    results,
+    stats,
+    live_stream_path=live_stream_path,
+    live_monitor_token=live_monitor_token,
+  )
+  if live_stream_path:
+    report_dir = Path(output_path).parent.resolve()
+    stream_path = Path(live_stream_path).resolve()
+    try:
+      relative = stream_path.relative_to(report_dir)
+      payload["live_stream"]["path"] = relative.as_posix()
+    except ValueError:
+      payload["live_stream"]["path"] = stream_path.as_posix()
 
     html = f"""
 <!doctype html>
@@ -95,7 +177,44 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
     .dot-new {{ background:#16a34a; }}
     .dot-changed {{ background:#f59e0b; }}
     .dot-removed {{ background:#dc2626; }}
+    .monitor-grid {{ display:grid; grid-template-columns:2fr 1fr; gap:12px; }}
+    .monitor-track {{ height:12px; border-radius:999px; background:color-mix(in srgb, var(--line) 78%, transparent); overflow:hidden; border:1px solid var(--line); }}
+    .monitor-fill {{ height:100%; background:linear-gradient(90deg,#0ea5e9,#16a34a); width:0%; transition:width .45s ease; }}
+    .monitor-metrics {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:8px; margin-top:10px; }}
+    .monitor-metrics .tile {{ border:1px solid var(--line); border-radius:10px; padding:8px; background:color-mix(in srgb, var(--card) 94%, #ffffff 6%); }}
+    .monitor-metrics .tile b {{ font-size:18px; display:block; margin-top:2px; }}
+    .feed {{ max-height:220px; overflow:auto; border:1px solid var(--line); border-radius:10px; padding:8px; background:color-mix(in srgb, var(--card) 96%, #ffffff 4%); }}
+    .feed-item {{ display:flex; gap:8px; align-items:flex-start; margin-bottom:7px; }}
+    .feed-item .time {{ color:var(--muted); min-width:74px; font-family:Consolas, 'Courier New', monospace; font-size:12px; }}
+    .risk-wrap {{ border:1px solid var(--line); border-radius:12px; padding:10px; }}
+    .risk-track {{ height:14px; border-radius:999px; overflow:hidden; background:color-mix(in srgb, var(--line) 80%, transparent); border:1px solid var(--line); }}
+    .risk-fill {{ height:100%; width:0%; transition:width .5s ease; background:linear-gradient(90deg,#22c55e 0%, #eab308 50%, #ef4444 100%); }}
+    .sev-badges {{ display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }}
+    .sev-badge {{ border:1px solid var(--line); border-radius:999px; padding:4px 8px; font-size:12px; }}
+    .sev-info {{ background:#e0f2fe; color:#0c4a6e; }}
+    .sev-low {{ background:#dcfce7; color:#14532d; }}
+    .sev-medium {{ background:#fef9c3; color:#854d0e; }}
+    .sev-high {{ background:#ffedd5; color:#9a3412; }}
+    .sev-critical {{ background:#fee2e2; color:#991b1b; }}
+    .group-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:10px; }}
+    .group-list {{ max-height:220px; overflow:auto; border:1px solid var(--line); border-radius:10px; padding:8px; }}
+    .group-list ul {{ margin:0; padding-left:16px; }}
+    .group-list li {{ margin:3px 0; }}
+    .shot-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:10px; }}
+    .shot {{ border:1px solid var(--line); border-radius:10px; overflow:hidden; background:color-mix(in srgb, var(--card) 95%, #ffffff 5%); }}
+    .shot img {{ width:100%; height:140px; object-fit:cover; display:block; background:#0f172a; }}
+    .shot .meta {{ padding:8px; font-size:12px; }}
+    .det-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:10px; }}
+    .det-card {{ border:1px solid var(--line); border-radius:10px; padding:10px; }}
+    .det-card h3 {{ margin:0 0 6px; font-size:14px; }}
+    .det-status {{ display:inline-block; border-radius:999px; padding:2px 8px; font-size:11px; }}
+    .det-ok {{ background:#dcfce7; color:#14532d; }}
+    .det-info {{ background:#e0f2fe; color:#0c4a6e; }}
+    .det-low {{ background:#fef9c3; color:#854d0e; }}
+    .det-medium {{ background:#ffedd5; color:#9a3412; }}
+    .det-high {{ background:#fee2e2; color:#991b1b; }}
     @media (max-width: 950px) {{ .grid2 {{ grid-template-columns:1fr; }} .grid3 {{ grid-template-columns:1fr; }} }}
+    @media (max-width: 950px) {{ .monitor-grid {{ grid-template-columns:1fr; }} }}
     @media (max-width: 640px) {{
       .wrap {{ margin:12px auto; padding:0 8px 20px; }}
       .top h1 {{ font-size:22px; }}
@@ -120,6 +239,8 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
           </select>
         </div>
         <div class='spacer'></div>
+        <button type='button' onclick='exportPdfReport()'>Export PDF</button>
+        <button type='button' onclick='exportMarkdownReport()'>Export Markdown</button>
         <button id='themeToggle' type='button' onclick='toggleTheme()' aria-label='Toggle dark mode'>Dark Mode</button>
       </div>
       <div class='kpi'>
@@ -130,6 +251,89 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
         <div class='box'><span>Domains</span><b>{payload['derived']['unique_domains']}</b></div>
         <div class='box'><span>Intelligence</span><b>{payload['stats'].get('intelligence_findings', 0)}</b></div>
         <div class='box'><span>Errors</span><b>{payload['stats'].get('errors', 0)}</b></div>
+      </div>
+    </section>
+
+    <section class='grid2'>
+      <div class='card'>
+        <h2>Executive Summary</h2>
+        <div class='mono'>Target scope: authorized OSINT and asset discovery only.</div>
+        <div class='monitor-metrics' style='margin-top:10px;'>
+          <div class='tile'><span>Pages Crawled</span><b>{payload['stats'].get('pages_crawled', 0)}</b></div>
+          <div class='tile'><span>Assets Found</span><b>{payload['derived'].get('assets_total', 0)}</b></div>
+          <div class='tile'><span>Documents</span><b>{payload['stats'].get('unique_documents', 0)}</b></div>
+          <div class='tile'><span>Images</span><b>{payload['derived'].get('unique_images', 0)}</b></div>
+          <div class='tile'><span>Emails</span><b>{payload['stats'].get('unique_emails', 0)}</b></div>
+          <div class='tile'><span>Phone Numbers</span><b>{payload['derived'].get('unique_phones', 0)}</b></div>
+          <div class='tile'><span>Domains</span><b>{payload['derived'].get('unique_domains', 0)}</b></div>
+          <div class='tile'><span>Overall Exposure</span><b>{escape(str(payload['risk'].get('exposure', 'LOW')))}</b></div>
+        </div>
+      </div>
+      <div class='card'>
+        <h2>Overall Risk</h2>
+        <div class='risk-wrap'>
+          <div class='mono'>Risk score: <b id='riskScoreText'>{escape(str(payload['risk'].get('score', 0)))}%</b></div>
+          <div class='risk-track' style='margin-top:8px;'><div id='riskFill' class='risk-fill'></div></div>
+          <div class='sev-badges'>
+            <span class='sev-badge sev-info'>INFO: {escape(str(payload['risk'].get('counts', {}).get('info', 0)))}</span>
+            <span class='sev-badge sev-low'>LOW: {escape(str(payload['risk'].get('counts', {}).get('low', 0)))}</span>
+            <span class='sev-badge sev-medium'>MEDIUM: {escape(str(payload['risk'].get('counts', {}).get('medium', 0)))}</span>
+            <span class='sev-badge sev-high'>HIGH: {escape(str(payload['risk'].get('counts', {}).get('high', 0)))}</span>
+            <span class='sev-badge sev-critical'>CRITICAL: {escape(str(payload['risk'].get('counts', {}).get('critical', 0)))}</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class='card'>
+      <h2>Real-Time Crawl Monitor (Playback)</h2>
+      <div class='monitor-grid'>
+        <div>
+          <div class='mono' id='monitorCurrentUrl'>Current URL: waiting for timeline data...</div>
+          <div class='monitor-track' style='margin-top:8px;'><div id='monitorProgress' class='monitor-fill'></div></div>
+          <div class='monitor-metrics'>
+            <div class='tile'><span>Progress</span><b id='monitorProgressText'>0%</b></div>
+            <div class='tile'><span>Pages Crawled</span><b id='monitorPages'>0</b></div>
+            <div class='tile'><span>Requests/sec</span><b id='monitorRps'>0.00</b></div>
+            <div class='tile'><span>Queue Size</span><b id='monitorQueue'>0</b></div>
+            <div class='tile'><span>Depth</span><b id='monitorDepth'>0</b></div>
+            <div class='tile'><span>ETA</span><b id='monitorEta'>n/a</b></div>
+          </div>
+        </div>
+        <div>
+          <div class='mono' style='margin-bottom:6px;'>Timeline Events</div>
+          <div id='timelineFeed' class='feed'></div>
+        </div>
+      </div>
+    </section>
+
+    <section class='card'>
+      <h2>Interactive Intelligence Dashboard</h2>
+      <div class='toolbar'>
+        <input id='intelGroupSearch' type='text' placeholder='Search grouped findings...' oninput='renderGroupedFindings()'/>
+      </div>
+      <div id='intelGroups' class='group-grid'></div>
+    </section>
+
+    <section class='card'>
+      <h2>Detection Modules</h2>
+      <div id='detectionModules' class='det-grid'></div>
+    </section>
+
+    <section class='card'>
+      <h2>Screenshot Capture</h2>
+      <div id='screenshotGallery' class='shot-grid'></div>
+    </section>
+
+    <section class='grid2'>
+      <div class='card'>
+        <h2>Technology Fingerprinting</h2>
+        <div id='technologyList' class='group-list'></div>
+      </div>
+      <div class='card'>
+        <h2>Detected Technologies (Top)</h2>
+        <div class='toolbar'><button onclick="exportChart('technologyPlot','technology_fingerprints')">Export Chart</button></div>
+        <div id='technologyPlot' class='plot'></div>
       </div>
     </section>
 
@@ -360,7 +564,7 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
         </div>
         <div class='scroll'>
           <table>
-            <thead><tr><th class='clickable' onclick="sortTable('intel','seed','text')">Seed</th><th class='clickable' onclick="sortTable('intel','domain','text')">Domain</th><th class='clickable' onclick="sortTable('intel','type','text')">Type</th><th>URL</th><th class='clickable' onclick="sortTable('intel','status','text')">Status</th><th class='clickable' onclick="sortTable('intel','timestamp','date')">Timestamp</th><th>Details</th></tr></thead>
+            <thead><tr><th class='clickable' onclick="sortTable('intel','seed','text')">Seed</th><th class='clickable' onclick="sortTable('intel','domain','text')">Domain</th><th class='clickable' onclick="sortTable('intel','type','text')">Type</th><th class='clickable' onclick="sortTable('intel','severity','text')">Severity</th><th>URL</th><th class='clickable' onclick="sortTable('intel','status','text')">Status</th><th class='clickable' onclick="sortTable('intel','timestamp','date')">Timestamp</th><th>Details</th></tr></thead>
             <tbody id='intelTbody'></tbody>
           </table>
         </div>
@@ -609,7 +813,7 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
         filteredPageRows = filteredPageRows.filter(row => matchesSearch(row, ['seed', 'domain', 'title', 'page_url', 'status', 'emails_count', 'documents_count']));
         filteredEmailRows = filteredEmailRows.filter(row => matchesSearch(row, ['seed', 'domain', 'value', 'page_url']));
         filteredDocumentRows = filteredDocumentRows.filter(row => matchesSearch(row, ['seed', 'domain', 'value', 'page_url']));
-        filteredIntelRows = filteredIntelRows.filter(row => matchesSearch(row, ['seed', 'domain', 'type', 'url', 'status', 'details']));
+        filteredIntelRows = filteredIntelRows.filter(row => matchesSearch(row, ['seed', 'domain', 'type', 'severity', 'url', 'status', 'details']));
       }}
 
       filteredPageRows = sortRows(filteredPageRows, tableSortState.pages);
@@ -621,6 +825,7 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
       renderTables();
       renderPageDetails();
       renderPageGraph();
+      renderLiveMonitor();
     }}
 
     function resetFilters() {{
@@ -829,10 +1034,10 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
 
       const intelBody = document.getElementById('intelTbody');
       if (filteredIntelRows.length === 0) {{
-        intelBody.innerHTML = '<tr><td colspan="7">No rows</td></tr>';
+        intelBody.innerHTML = '<tr><td colspan="8">No rows</td></tr>';
       }} else {{
         intelBody.innerHTML = filteredIntelRows.slice(0, 2000).map(row =>
-          `<tr tabindex="0" onclick="selectPage('${{escapeHtml(row.page_url || row.url)}}')" onkeydown="handleRowKey(event, '${{escapeHtml(row.page_url || row.url)}}')"><td>${{escapeHtml(row.seed)}}</td><td>${{escapeHtml(row.domain)}}</td><td>${{escapeHtml(row.type)}}</td><td><a href="${{escapeHtml(row.url)}}" target="_blank" rel="noopener noreferrer">${{escapeHtml(row.url)}}</a></td><td>${{escapeHtml(row.status)}}</td><td>${{escapeHtml(row.timestamp)}}</td><td>${{escapeHtml(row.details)}}</td></tr>`
+          `<tr tabindex="0" onclick="selectPage('${{escapeHtml(row.page_url || row.url)}}')" onkeydown="handleRowKey(event, '${{escapeHtml(row.page_url || row.url)}}')"><td>${{escapeHtml(row.seed)}}</td><td>${{escapeHtml(row.domain)}}</td><td>${{escapeHtml(row.type)}}</td><td><span class="sev-badge sev-${{escapeHtml((row.severity || 'low').toLowerCase())}}">${{escapeHtml(row.severity || 'low')}}</span></td><td><a href="${{escapeHtml(row.url)}}" target="_blank" rel="noopener noreferrer">${{escapeHtml(row.url)}}</a></td><td>${{escapeHtml(row.status)}}</td><td>${{escapeHtml(row.timestamp)}}</td><td>${{escapeHtml(row.details)}}</td></tr>`
         ).join('');
       }}
 
@@ -894,6 +1099,11 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
       Plotly.newPlot('documentTypePlot', [
         {{type:'pie', labels:dt.labels, values:dt.values, textinfo:'label+percent', hole:.38}}
       ], {{margin:{{t:20,r:10,l:10,b:10}}}}, {{responsive:true}});
+
+      const tech = payload.charts.technologies;
+      Plotly.newPlot('technologyPlot', [
+        {{type:'bar', x:tech.labels, y:tech.values, marker:{{color:'#0ea5e9'}}}}
+      ], {{margin:{{t:20,r:10,l:55,b:90}}, yaxis:{{title:'Occurrences'}}}}, {{responsive:true}});
 
       const ct = payload.charts.crawl_timing;
       Plotly.newPlot('crawlTimingPlot', [
@@ -1061,18 +1271,432 @@ def write_html_report(results: list[CrawlResult], stats: dict, output_path: str)
       }}, {{responsive:true}});
     }}
 
+    function renderRiskPanel() {{
+      const score = Number(payload.risk?.score || 0);
+      const riskFill = document.getElementById('riskFill');
+      if (riskFill) riskFill.style.width = `${{Math.max(0, Math.min(100, score))}}%`;
+      const scoreText = document.getElementById('riskScoreText');
+      if (scoreText) scoreText.textContent = `${{score}}%`;
+    }}
+
+    function renderGroupedFindings() {{
+      const root = document.getElementById('intelGroups');
+      if (!root) return;
+      const grouped = payload.grouped_findings || {{}};
+      const query = (document.getElementById('intelGroupSearch')?.value || '').trim().toLowerCase();
+      const sections = Object.entries(grouped).map(([name, items]) => {{
+        const rows = (items || []).filter(item => !query || String(item).toLowerCase().includes(query));
+        const list = rows.length
+          ? `<ul>${{rows.slice(0, 120).map(item => `<li>${{escapeHtml(item)}}</li>`).join('')}}</ul>`
+          : '<div class="mono">No matches</div>';
+        return `<div class="card"><h3>${{escapeHtml(name)}} <span class="mono">(${{rows.length}})</span></h3><div class="group-list">${{list}}</div></div>`;
+      }});
+      root.innerHTML = sections.join('');
+    }}
+
+    function renderTechnologyList() {{
+      const root = document.getElementById('technologyList');
+      if (!root) return;
+      const tech = payload.charts?.technologies || {{labels: [], values: []}};
+      if (!tech.labels.length) {{
+        root.innerHTML = '<div class="mono">No technology fingerprints detected.</div>';
+        return;
+      }}
+      root.innerHTML = `<ul>${{tech.labels.map((label, idx) => `<li>${{escapeHtml(label)}} <span class="mono">(${{tech.values[idx] || 0}})</span></li>`).join('')}}</ul>`;
+    }}
+
+    function exportPdfReport() {{
+      window.print();
+    }}
+
+    function exportMarkdownReport() {{
+      const risk = payload.risk || {{score: 0, exposure: 'LOW', counts: {{}}}};
+      const md = [
+        '# OSINT Crawl Report',
+        '',
+        `Generated: ${{payload.generated_at}}`,
+        '',
+        '## Executive Summary',
+        `- Pages Crawled: ${{payload.stats?.pages_crawled || 0}}`,
+        `- Assets Found: ${{payload.derived?.assets_total || 0}}`,
+        `- Emails: ${{payload.stats?.unique_emails || 0}}`,
+        `- Documents: ${{payload.stats?.unique_documents || 0}}`,
+        `- Risk Score: ${{risk.score || 0}}% (${{risk.exposure || 'LOW'}})`,
+        '',
+        '## Risk Breakdown',
+        `- Info: ${{risk.counts?.info || 0}}`,
+        `- Low: ${{risk.counts?.low || 0}}`,
+        `- Medium: ${{risk.counts?.medium || 0}}`,
+        `- High: ${{risk.counts?.high || 0}}`,
+        `- Critical: ${{risk.counts?.critical || 0}}`,
+        '',
+        '## Top Technologies',
+      ];
+      const tech = payload.charts?.technologies || {{labels: [], values: []}};
+      for (let i = 0; i < tech.labels.length; i += 1) {{
+        md.push(`- ${{tech.labels[i]}}: ${{tech.values[i] || 0}}`);
+      }}
+      md.push('', '## Detection Modules');
+      for (const item of (payload.detection_modules || [])) {{
+        md.push(`- ${{item.name}}: ${{item.count}} (${{item.status}})`);
+      }}
+      const blob = new Blob([md.join('\n')], {{type:'text/markdown;charset=utf-8;'}});
+      triggerDownload(blob, 'osint_report.md');
+    }}
+
+    function renderDetectionModules() {{
+      const root = document.getElementById('detectionModules');
+      if (!root) return;
+      const modules = payload.detection_modules || [];
+      if (!modules.length) {{
+        root.innerHTML = '<div class="mono">No detection module data available.</div>';
+        return;
+      }}
+      root.innerHTML = modules.map(item => `
+        <div class="det-card">
+          <h3>${{escapeHtml(item.name)}}</h3>
+          <div><span class="det-status det-${{escapeHtml(item.status || 'ok')}}">${{escapeHtml((item.status || 'ok').toUpperCase())}}</span></div>
+          <div style="margin-top:6px;"><b>${{escapeHtml(String(item.count || 0))}}</b></div>
+          <div class="mono" style="margin-top:6px;">${{escapeHtml(item.description || '')}}</div>
+        </div>
+      `).join('');
+    }}
+
+    function renderScreenshotGallery() {{
+      const root = document.getElementById('screenshotGallery');
+      if (!root) return;
+      const items = payload.screenshots || [];
+      if (!items.length) {{
+        root.innerHTML = '<div class="mono">No screenshots captured. Run with --collect-screenshots.</div>';
+        return;
+      }}
+      root.innerHTML = items.slice(0, 120).map(item => `
+        <div class="shot">
+          <img src="${{escapeHtml(item.path)}}" alt="Screenshot for ${{escapeHtml(item.url || item.seed || '')}}" loading="lazy"/>
+          <div class="meta">
+            <div><b>${{escapeHtml(item.seed || '')}}</b></div>
+            <div class="mono">${{escapeHtml(item.url || '')}}</div>
+          </div>
+        </div>
+      `).join('');
+    }}
+
+    let liveStreamTimer = null;
+    let liveSocket = null;
+    let lastLiveSeq = 0;
+    let liveEventBuffer = [];
+    const liveAuthToken = payload.live_stream?.auth_token || '';
+
+    function mergeLiveEvents(events) {{
+      if (!events || !events.length) return;
+      const fresh = events.filter(item => Number(item.sequence || 0) > lastLiveSeq);
+      if (!fresh.length) return;
+      lastLiveSeq = Number(fresh[fresh.length - 1].sequence || lastLiveSeq);
+      liveEventBuffer = [...liveEventBuffer, ...fresh].slice(-300);
+      applyLiveEvents();
+    }}
+
+    async function pollLiveStream() {{
+      try {{
+        const headers = liveAuthToken ? {{Authorization: `Bearer ${{liveAuthToken}}`}} : {{}};
+        const apiResponse = await fetch(`/api/live/events?since=${{lastLiveSeq}}`, {{cache: 'no-store', headers}});
+        if (apiResponse.ok) {{
+          const data = await apiResponse.json();
+          mergeLiveEvents(Array.isArray(data?.events) ? data.events : []);
+          return;
+        }}
+      }} catch (_err) {{
+        // fallback below
+      }}
+
+      const streamPath = payload.live_stream?.path;
+      if (!streamPath) return;
+      try {{
+        const response = await fetch(streamPath + `?t=${{Date.now()}}`, {{cache: 'no-store'}});
+        if (!response.ok) return;
+        const text = await response.text();
+        const lines = text.split('\n').filter(Boolean);
+        const events = lines.map(line => {{
+          try {{ return JSON.parse(line); }} catch (_err) {{ return null; }}
+        }}).filter(Boolean);
+        mergeLiveEvents(events);
+      }} catch (_err) {{
+        // Ignore polling errors when file is not served over HTTP.
+      }}
+    }}
+
+    function connectLiveSocket() {{
+      if (liveSocket || !window.WebSocket || !window.location?.host) return;
+      const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      try {{
+        const query = liveAuthToken ? `?token=${{encodeURIComponent(liveAuthToken)}}` : '';
+        liveSocket = new WebSocket(`${{scheme}}://${{window.location.host}}/ws/live${{query}}`);
+      }} catch (_err) {{
+        liveSocket = null;
+        return;
+      }}
+      liveSocket.onmessage = (event) => {{
+        try {{
+          const data = JSON.parse(event.data);
+          mergeLiveEvents(Array.isArray(data?.events) ? data.events : []);
+        }} catch (_err) {{
+          // ignore malformed frame
+        }}
+      }};
+      liveSocket.onclose = () => {{
+        liveSocket = null;
+      }};
+      liveSocket.onerror = () => {{
+        liveSocket = null;
+      }};
+    }}
+
+    function applyLiveEvents() {{
+      if (!liveEventBuffer.length) return;
+      const latest = liveEventBuffer[liveEventBuffer.length - 1];
+      const pages = Number(latest.pages_crawled || latest.pages || payload.stats?.pages_crawled || 0);
+      const maxPages = Number(payload.stats?.max_pages || payload.stats?.pages_crawled || pages || 1);
+      const progress = maxPages > 0 ? Math.min(100, Math.round((pages / maxPages) * 100)) : 0;
+      const queueDepth = Number(latest.queue_depth || 0);
+      const depth = Number(latest.depth || payload.charts?.page_graph?.max_depth || 0);
+
+      const setText = (id, value) => {{
+        const el = document.getElementById(id);
+        if (el) el.textContent = value;
+      }};
+      const fill = document.getElementById('monitorProgress');
+      if (fill) fill.style.width = `${{progress}}%`;
+      setText('monitorProgressText', `${{progress}}%`);
+      setText('monitorPages', String(pages));
+      setText('monitorQueue', String(queueDepth));
+      setText('monitorDepth', String(depth));
+      setText('monitorCurrentUrl', `Current URL: ${{latest.url || 'waiting...'}}`);
+
+      const feed = document.getElementById('timelineFeed');
+      if (feed) {{
+        feed.innerHTML = liveEventBuffer.slice(-24).reverse().map(event => `
+          <div class="feed-item">
+            <div class="time">${{escapeHtml(String(event.timestamp || '').slice(11, 19) || '--:--:--')}}</div>
+            <div>${{escapeHtml(String(event.event || 'event').replaceAll('_', ' '))}}${{event.url ? `: ${{escapeHtml(event.url)}}` : ''}}</div>
+          </div>
+        `).join('');
+      }}
+    }}
+
+    function renderLiveMonitor() {{
+      const timeline = payload.charts?.timeline || {{x: [], y: []}};
+      const x = timeline.x || [];
+      const y = timeline.y || [];
+      const pages = Number(payload.stats?.pages_crawled || y[y.length - 1] || 0);
+      const requestsCompleted = Number(payload.performance?.aggregate?.requests_completed || pages || 0);
+      const duration = Number(payload.snapshot?.duration_seconds || 0);
+      const rps = duration > 0 ? requestsCompleted / duration : 0;
+      const maxPages = Number(payload.stats?.max_pages || pages || 1);
+      const progress = maxPages > 0 ? Math.min(100, Math.round((pages / maxPages) * 100)) : 0;
+      const queueSize = Math.max(0, maxPages - pages);
+      const depth = Number(payload.charts?.page_graph?.max_depth || 0);
+      const eta = rps > 0 ? (queueSize / rps) : 0;
+
+      const progressBar = document.getElementById('monitorProgress');
+      if (progressBar) progressBar.style.width = `${{progress}}%`;
+      const setText = (id, value) => {{
+        const el = document.getElementById(id);
+        if (el) el.textContent = value;
+      }};
+
+      setText('monitorProgressText', `${{progress}}%`);
+      setText('monitorPages', String(pages));
+      setText('monitorRps', rps.toFixed(2));
+      setText('monitorQueue', String(queueSize));
+      setText('monitorDepth', String(depth));
+      setText('monitorEta', eta > 0 ? `${{Math.ceil(eta)}}s` : 'n/a');
+
+      const latest = filteredPageRows[0] || payload.tables?.page_rows?.[0] || null;
+      const currentUrl = latest?.page_url || latest?.url || 'waiting...';
+      setText('monitorCurrentUrl', `Current URL: ${{currentUrl}}`);
+
+      const feed = document.getElementById('timelineFeed');
+      if (feed) {{
+        const events = [];
+        for (let i = 0; i < x.length; i += 1) {{
+          const ts = String(x[i] || '');
+          const val = Number(y[i] || 0);
+          events.push({{ ts, text: `Crawl progress reached ${{val}} pages` }});
+        }}
+        const startTs = x[0] || payload.generated_at;
+        const endTs = x[x.length - 1] || payload.generated_at;
+        events.unshift({{ ts: startTs, text: 'Started crawl' }});
+        events.push({{ ts: endTs, text: 'Completed crawl' }});
+        feed.innerHTML = events.slice(-24).reverse().map(event => `
+          <div class="feed-item">
+            <div class="time">${{escapeHtml(String(event.ts).slice(11, 19) || '--:--:--')}}</div>
+            <div>${{escapeHtml(event.text)}}</div>
+          </div>
+        `).join('');
+      }}
+
+      if (!liveStreamTimer && payload.live_stream?.path) {{
+        connectLiveSocket();
+        liveStreamTimer = window.setInterval(pollLiveStream, 1250);
+      }}
+    }}
+
     applyTheme(localStorage.getItem(THEME_STATE_KEY) || 'light');
     populateFilters();
     applySnapshotFilters();
     renderCharts();
+    renderRiskPanel();
+    renderGroupedFindings();
+    renderDetectionModules();
+    renderScreenshotGallery();
+    renderTechnologyList();
     renderPageGraph();
     renderPerformanceChart();
     applyFilters();
+    renderLiveMonitor();
   </script>
 </body>
 </html>
 """
 
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(html, encoding="utf-8")
+
+
+def write_live_monitor_page(live_stream_path: str, output_path: str, *, auth_token: str = "") -> None:
+    stream_ref = Path(live_stream_path).as_posix()
+    html = f"""
+<!doctype html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'/>
+  <meta name='viewport' content='width=device-width, initial-scale=1'/>
+  <title>OSINT Live Crawl Monitor</title>
+  <style>
+    body {{ margin:0; padding:18px; font-family:'Segoe UI', Tahoma, sans-serif; background:#0b1220; color:#e2e8f0; }}
+    .card {{ border:1px solid #24324a; border-radius:12px; padding:12px; background:#111a2b; margin-bottom:10px; }}
+    .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; }}
+    .tile {{ border:1px solid #24324a; border-radius:10px; padding:8px; background:#0f172a; }}
+    .tile b {{ font-size:20px; display:block; margin-top:3px; }}
+    .bar {{ height:12px; border-radius:999px; overflow:hidden; border:1px solid #24324a; background:#0f172a; }}
+    .bar > div {{ height:100%; width:0%; background:linear-gradient(90deg,#06b6d4,#22c55e); transition:width .4s ease; }}
+    .feed {{ max-height:420px; overflow:auto; border:1px solid #24324a; border-radius:10px; padding:8px; }}
+    .event {{ margin:0 0 6px; font-family:Consolas, 'Courier New', monospace; font-size:12px; }}
+  </style>
+</head>
+<body>
+  <div class='card'>
+    <h1 style='margin:0 0 6px;'>OSINT Live Crawl Monitor</h1>
+    <div id='currentUrl'>Current URL: waiting...</div>
+    <div class='bar' style='margin-top:8px;'><div id='progressFill'></div></div>
+    <div class='grid' style='margin-top:10px;'>
+      <div class='tile'><span>Progress</span><b id='progressText'>0%</b></div>
+      <div class='tile'><span>Pages</span><b id='pagesText'>0</b></div>
+      <div class='tile'><span>Queue</span><b id='queueText'>0</b></div>
+      <div class='tile'><span>Depth</span><b id='depthText'>0</b></div>
+    </div>
+  </div>
+  <div class='card'>
+    <h2 style='margin:0 0 8px;'>Timeline</h2>
+    <div id='eventFeed' class='feed'></div>
+  </div>
+
+  <script>
+    const streamPath = {json.dumps(stream_ref, ensure_ascii=True)};
+    const authToken = {json.dumps(auth_token, ensure_ascii=True)};
+    let lastSeq = 0;
+    let maxPages = 1;
+    let feed = [];
+    let socket = null;
+
+    function setText(id, value) {{
+      const el = document.getElementById(id);
+      if (el) el.textContent = value;
+    }}
+
+    function applyEvents(events) {{
+      const fresh = events.filter(e => Number(e.sequence || 0) > lastSeq);
+      if (!fresh.length) return;
+
+      for (const event of fresh) {{
+        lastSeq = Number(event.sequence || lastSeq);
+        feed.push(event);
+        if (event.event === 'crawl_started') {{
+          maxPages = Math.max(1, Number(event.max_pages_per_seed || 1) * Number(event.seed_count || 1));
+        }}
+        if (event.event === 'page_crawled') {{
+          const pages = Number(event.pages_crawled || 0);
+          const progress = Math.min(100, Math.round((pages / maxPages) * 100));
+          const fill = document.getElementById('progressFill');
+          if (fill) fill.style.width = progress + '%';
+          setText('progressText', progress + '%');
+          setText('pagesText', String(pages));
+          setText('queueText', String(Number(event.queue_depth || 0)));
+          setText('depthText', String(Number(event.depth || 0)));
+          setText('currentUrl', 'Current URL: ' + String(event.url || ''));
+        }}
+      }}
+
+      const feedEl = document.getElementById('eventFeed');
+      if (feedEl) {{
+        feedEl.innerHTML = feed.slice(-120).reverse().map(event => (
+          `<div class="event">${{String(event.timestamp || '').slice(11,19)}} | ${{String(event.event || '').replaceAll('_',' ')}}${{event.url ? ' | ' + event.url : ''}}</div>`
+        )).join('');
+      }}
+    }}
+
+    async function tick() {{
+      try {{
+        const apiHeaders = authToken ? {{Authorization: 'Bearer ' + authToken}} : {{}};
+        const api = await fetch('/api/live/events?since=' + lastSeq, {{cache: 'no-store', headers: apiHeaders}});
+        if (api.ok) {{
+          const data = await api.json();
+          applyEvents(Array.isArray(data?.events) ? data.events : []);
+          return;
+        }}
+
+        const response = await fetch(streamPath + '?t=' + Date.now(), {{cache: 'no-store'}});
+        if (!response.ok) return;
+        const text = await response.text();
+        const events = text.split('\\n').filter(Boolean).map(line => {{
+          try {{ return JSON.parse(line); }} catch (_err) {{ return null; }}
+        }}).filter(Boolean);
+        applyEvents(events);
+      }} catch (_err) {{
+        // ignore polling errors
+      }}
+    }}
+
+    function connectSocket() {{
+      if (!window.WebSocket || !window.location?.host || socket) return;
+      const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      try {{
+        const query = authToken ? `?token=${{encodeURIComponent(authToken)}}` : '';
+        socket = new WebSocket(`${{scheme}}://${{window.location.host}}/ws/live${{query}}`);
+      }} catch (_err) {{
+        socket = null;
+        return;
+      }}
+      socket.onmessage = (event) => {{
+        try {{
+          const data = JSON.parse(event.data);
+          applyEvents(Array.isArray(data?.events) ? data.events : []);
+        }} catch (_err) {{
+          // ignore malformed socket frame
+        }}
+      }};
+      socket.onclose = () => {{ socket = null; }};
+      socket.onerror = () => {{ socket = null; }};
+    }}
+
+    window.setInterval(tick, 1000);
+    connectSocket();
+    tick();
+  </script>
+</body>
+</html>
+"""
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html, encoding="utf-8")
@@ -1160,7 +1784,13 @@ def _render_performance_summary(performance: dict) -> str:
     )
 
 
-def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
+def _build_dashboard_payload(
+  results: list[CrawlResult],
+  stats: dict,
+  *,
+  live_stream_path: str = "",
+  live_monitor_token: str = "",
+) -> dict:
     seed_labels = [r.seed_url for r in results]
     seed_pages = [r.pages_crawled for r in results]
     seed_emails = [len(r.emails) for r in results]
@@ -1171,6 +1801,7 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
     filetypes: Counter[str] = Counter()
     email_domains: Counter[str] = Counter()
     document_types: Counter[str] = Counter()
+    technologies: Counter[str] = Counter()
     errors: list[dict] = []
 
     graph_edges: Counter[tuple[str, str]] = Counter()
@@ -1190,6 +1821,21 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
     seeds_filter: set[str] = set()
     domains_filter: set[str] = set()
     types_filter: set[str] = set()
+    grouped_findings: dict[str, set[str]] = {
+      "Email Addresses": set(),
+      "Phone Numbers": set(),
+      "Documents": set(),
+      "Images": set(),
+      "Technology": set(),
+      "JavaScript": set(),
+    }
+    screenshots: list[dict[str, str]] = []
+    sensitive_hits: set[str] = set()
+    api_endpoint_hits: set[str] = set()
+    directory_listing_hits: set[str] = set()
+    metadata_hits: set[str] = set()
+    tls_hits = 0
+    missing_security_header_count = 0
 
     for result in results:
         seed = result.seed_url
@@ -1335,6 +1981,7 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
                     }
                 )
                 types_filter.add("email")
+                grouped_findings["Email Addresses"].add(value)
 
             for value in finding.documents:
                 ext = _ext_for_url(value)
@@ -1362,6 +2009,7 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
                     }
                 )
                 types_filter.add("document")
+                grouped_findings["Documents"].add(value)
 
             for value in finding.images:
                 filetypes[_ext_for_url(value)] += 1
@@ -1376,6 +2024,7 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
                     }
                 )
                 types_filter.add("image")
+                grouped_findings["Images"].add(value)
 
             for value in finding.social_accounts:
                 assets_rows.append(
@@ -1402,6 +2051,7 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
                     }
                 )
                 types_filter.add("phone")
+                grouped_findings["Phone Numbers"].add(value)
 
             for value in finding.javascript_assets:
                 filetypes[_ext_for_url(value)] += 1
@@ -1416,6 +2066,7 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
                     }
                 )
                 types_filter.add("javascript")
+                grouped_findings["JavaScript"].add(value)
 
             for value in finding.technologies:
                 assets_rows.append(
@@ -1429,6 +2080,8 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
                     }
                 )
                 types_filter.add("technology")
+                technologies[value] += 1
+                grouped_findings["Technology"].add(value)
 
             for value in finding.broken_links:
                 assets_rows.append(
@@ -1461,6 +2114,8 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
             domains_filter.add(dom)
             types_filter.add(intel.finding_type)
             page_intel_counts[intel.url] += 1
+            details_json = json.dumps(intel.details, sort_keys=True)
+            severity = _infer_severity(intel.finding_type, details_json)
             intelligence_rows.append(
                 {
                     "seed": seed,
@@ -1468,15 +2123,44 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
                     "type": intel.finding_type,
                     "url": intel.url,
                     "status": intel.status,
+                    "severity": severity,
                     "timestamp": result_ts,
-                "timestamp_ms": result_ts_ms,
-                    "details": json.dumps(intel.details, sort_keys=True),
-                "search_blob": (
-                  f"{seed} {dom} {intel.finding_type} {intel.url} "
-                  f"{intel.status} {json.dumps(intel.details, sort_keys=True)}"
-                ).lower(),
+                    "timestamp_ms": result_ts_ms,
+                    "details": details_json,
+                    "search_blob": (
+                        f"{seed} {dom} {intel.finding_type} {intel.url} "
+                        f"{intel.status} {severity} {details_json}"
+                    ).lower(),
                 }
             )
+
+            lower_url = intel.url.lower()
+            if any(token in lower_url for token in (".env", "backup", ".zip", ".bak", ".sql")):
+                sensitive_hits.add(intel.url)
+            if "/api" in lower_url:
+                api_endpoint_hits.add(intel.url)
+            if "directory" in details_json.lower() and "listing" in details_json.lower():
+                directory_listing_hits.add(intel.url)
+            if "metadata" in details_json.lower():
+                metadata_hits.add(intel.url)
+            if intel.finding_type == "tls_certificate" and intel.status == "ok":
+                tls_hits += 1
+            if intel.finding_type == "security_headers":
+                header_details = intel.details.get("headers", {}) if isinstance(intel.details, dict) else {}
+                if isinstance(header_details, dict) and len(header_details) < 3:
+                    missing_security_header_count += 1
+            if intel.finding_type == "screenshot":
+                path_value = ""
+                if isinstance(intel.details, dict):
+                    path_value = str(intel.details.get("path", ""))
+                if path_value:
+                    screenshots.append(
+                        {
+                            "seed": seed,
+                            "url": intel.url,
+                            "path": path_value,
+                        }
+                    )
 
         for err in result.errors:
             errors.append({"seed": seed, "error": err})
@@ -1717,9 +2401,63 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
         node["hier_y"] = 0.0
       page_graph_nodes_with_layout.append(node)
 
+    risk_summary = _compute_risk_summary(
+      intelligence_rows,
+      int(stats.get("pages_crawled", 0) if isinstance(stats, dict) else 0),
+    )
+
+    grouped_findings_payload = {
+      key: sorted(values)[:2000]
+      for key, values in grouped_findings.items()
+    }
+
+    detection_modules = [
+      {
+        "name": "Sensitive Files",
+        "count": len(sensitive_hits),
+        "status": "high" if sensitive_hits else "ok",
+        "description": "Potential .env/backups/archive artifacts discovered",
+      },
+      {
+        "name": "Missing Security Headers",
+        "count": missing_security_header_count,
+        "status": "medium" if missing_security_header_count else "ok",
+        "description": "Pages with weak or missing core hardening headers",
+      },
+      {
+        "name": "API Endpoints",
+        "count": len(api_endpoint_hits),
+        "status": "medium" if api_endpoint_hits else "ok",
+        "description": "URLs containing API-style paths",
+      },
+      {
+        "name": "Directory Listings",
+        "count": len(directory_listing_hits),
+        "status": "high" if directory_listing_hits else "ok",
+        "description": "Possible directory listing exposure indicators",
+      },
+      {
+        "name": "Document Metadata",
+        "count": len(metadata_hits),
+        "status": "low" if metadata_hits else "ok",
+        "description": "Potential metadata leakage in findings/details",
+      },
+      {
+        "name": "TLS Coverage",
+        "count": tls_hits,
+        "status": "info" if tls_hits else "ok",
+        "description": "Hosts with successfully collected TLS certificate details",
+      },
+    ]
+
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "live_stream": {
+            "path": live_stream_path,
+          "auth_token": live_monitor_token,
+        },
         "stats": stats,
+        "risk": risk_summary,
         "snapshot": {
             "run_id": snapshot.get("run_id"),
             "previous_run_id": snapshot.get("previous_run_id"),
@@ -1737,7 +2475,13 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
         },
         "derived": {
             "unique_domains": len(domain_pages),
+          "assets_total": len(assets_rows),
+          "unique_images": len(grouped_findings_payload.get("Images", [])),
+          "unique_phones": len(grouped_findings_payload.get("Phone Numbers", [])),
         },
+        "grouped_findings": grouped_findings_payload,
+        "screenshots": screenshots,
+        "detection_modules": detection_modules,
         "tables": {
           "page_rows": page_rows,
           "email_rows": email_rows,
@@ -1769,6 +2513,10 @@ def _build_dashboard_payload(results: list[CrawlResult], stats: dict) -> dict:
           "document_types": {
             "labels": [k for k, _ in document_types.most_common(12)] or ["none"],
             "values": [v for _, v in document_types.most_common(12)] or [0],
+          },
+          "technologies": {
+            "labels": [k for k, _ in technologies.most_common(16)] or ["none"],
+            "values": [v for _, v in technologies.most_common(16)] or [0],
           },
           "crawl_timing": {
             "labels": [
