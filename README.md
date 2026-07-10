@@ -10,30 +10,20 @@
 <!-- markdownlint-enable MD013 -->
 
 A modular Python crawler for authorized asset inventory and security
-engineering. It supports incremental crawling, SQLite persistence,
-schema migrations, historical snapshots, HTML reporting, JSON/CSV
-exports, and a plugin-based extraction framework.
+engineering workflows. It supports incremental crawling, historical
+snapshots, SQLite persistence, schema migrations, HTML dashboards, and
+JSON/CSV exports.
 
-This project is intended for **authorized asset inventory and
-defensive/security testing workflows only**.
+This project is for **authorized asset inventory and defensive testing
+only**.
 
-Use is limited to authorized asset inventory and defensive/security
-testing workflows.
+## Why This Project
 
-Authorized scope: authorized asset inventory and defensive/security testing.
-
-## Features
-
-- Breadth-first crawling with configurable depth, concurrency, retries,
-  and rate limits.
-- Robust output pipeline: HTML dashboard, JSON, CSV, stats JSON,
-  snapshot diff JSON, SQLite.
-- Incremental crawling and historical snapshot comparison between runs.
-- Plugin registry for extractor composition and extension.
-- Structured telemetry/observability for timing, request behavior, and queue
-  metrics.
-- Migration-aware SQLite persistence with compatibility and fixture-based
-  upgrade tests.
+- Crawl sites with configurable depth, concurrency, retries, and rate limits.
+- Extract emails, documents, links, metadata, and optional intelligence signals.
+- Persist findings to SQLite with migration-managed schema evolution.
+- Compare runs over time with snapshot diffing and historical trend analysis.
+- Produce analyst-friendly reports, charts, and machine-readable output files.
 
 ## Architecture
 
@@ -54,14 +44,9 @@ flowchart TD
   G --> H[HTML Report + JSON + CSV]
 ```
 
-### Extractor Architecture
-
-- Extractors are registered via
-  <!-- markdownlint-disable-next-line MD013 -->
-  [src/email_crawler/extractors/registry.py](src/email_crawler/extractors/registry.py).
-- Built-ins are registered in deterministic order.
-- The crawler composes runtime extractors through
-  `build_default_extractors(...)`.
+Extractor registration is defined in
+[src/email_crawler/extractors/registry.py](src/email_crawler/extractors/registry.py),
+and runtime composition is handled by `build_default_extractors(...)`.
 
 ## Installation
 
@@ -79,47 +64,66 @@ email-crawler --seeds data/seeds.txt --max-pages 100 --max-depth 2 \
   --allow-domain example.com
 ```
 
-Module mode also works:
+Module mode:
 
 ```powershell
 python -m email_crawler --seeds data/seeds.txt
 ```
 
+## Live Monitoring
+
+To generate a standalone live monitor page and stream file:
+
+```powershell
+python -m email_crawler.cli \
+  --seeds data/seeds.txt \
+  --out-live-stream output/crawl_live_stream.jsonl \
+  --out-live-monitor-html output/live_monitor.html
+```
+
+To host the live monitor with WebSocket and API endpoints during a crawl:
+
+```powershell
+python -m email_crawler.cli \
+  --seeds data/seeds.txt \
+  --serve-live-monitor \
+  --live-monitor-host 127.0.0.1 \
+  --live-monitor-port 8765
+```
+
 ## Configuration
 
-- Defaults are read from [config.yaml](config.yaml).
-- CLI values override YAML values.
-- Seed input supports text or simple CSV (first column URL).
+- Defaults are loaded from [config.yaml](config.yaml).
+- CLI arguments override YAML defaults.
+- Seed input can be plain text or simple CSV (first column URL).
 
-Core options:
+Common options:
 
 - `--seeds`, `--max-pages`, `--max-depth`, `--allow-domain`, `--cross-domain`
 - `--resume`, `--incremental`, `--checkpoint-dir`, `--checkpoint-every-pages`
 - `--out-stats`, `--out-snapshot-diff`, `--out-sqlite`, `--out-html`
+- `--out-live-stream`, `--out-live-monitor-html`, `--serve-live-monitor`
 
-## Reports
+## Reports And Outputs
 
-- Dashboard output is generated in `output/report.html`.
-- Snapshot Comparison includes detailed page-level change records and filtering.
-- Performance Observability includes aggregate and per-seed timing metrics.
-- Interactive analytics include:
-  - Crawl Metrics chart (pages, emails, documents, intelligence)
-  - Email Domain Distribution chart
-  - Document Type Distribution chart
-  - Crawl Timing chart (fetch/extraction/intelligence/robots/wait)
-  - Page Relationship Graph with force-directed and hierarchical layouts
-  - Graph controls for seed/domain/depth filters and snapshot-change
-    highlighting
-  - Internal vs external link color coding with clickable nodes that open
-    Page Details
-- Global search filters all findings tables.
-- Page Details panel shows all extracted artifacts for the selected page.
-- Charts can be exported as PNG or SVG.
-- Dashboard supports dark mode and responsive/mobile layout.
+Primary outputs:
 
-## Database Schema
+- `output/report.html` for the interactive dashboard.
+- `output/live_monitor.html` for live crawl monitoring.
+- `output/stats.json` for run telemetry and aggregates.
+- `output/snapshot_diff.json` for historical run deltas.
+- `output/findings.db` for persistent SQLite storage.
+- `output/results.json` and `output/results.csv` for downstream automation.
 
-### Database Schema and Migrations
+Dashboard highlights include:
+
+- crawl metrics and timing charts
+- domain and document-type distributions
+- interactive page relationship graph
+- global search and detailed page drill-downs
+- export options and responsive layout support
+
+## Database And Migrations
 
 Migrations are applied in-order from
 [src/email_crawler/migrations](src/email_crawler/migrations):
@@ -130,74 +134,41 @@ Migrations are applied in-order from
 - `004_provenance_layer.sql`
 - `005_snapshot_timeline_indexes.sql`
 
-The migration path preserves legacy data, is idempotent, and tracks
+The migration process is idempotent, preserves legacy data, and tracks
 final state in `schema_version`.
 
-Provenance fields and stable IDs are documented in
-[docs/PROVENANCE_MODEL.md](docs/PROVENANCE_MODEL.md).
-Historical snapshot retrieval strategy is documented in
-[docs/HISTORICAL_SNAPSHOTS_DESIGN.md](docs/HISTORICAL_SNAPSHOTS_DESIGN.md).
+Related docs:
 
-## Plugin System
+- [docs/PROVENANCE_MODEL.md](docs/PROVENANCE_MODEL.md)
+- [docs/HISTORICAL_SNAPSHOTS_DESIGN.md](docs/HISTORICAL_SNAPSHOTS_DESIGN.md)
 
-- Built-in extractor modules live under
-  [src/email_crawler/extractors](src/email_crawler/extractors).
-- Custom plugins can be registered through the registry abstraction.
-- JavaScript extraction remains feature-gated by existing CLI/config settings.
-
-## Testing
+## Testing And CI
 
 ```powershell
 python -m pip install -e .[dev]
 pytest -q
 ```
 
-CI in [.github/workflows/ci.yml](.github/workflows/ci.yml) runs
-linting, staged mypy checks, docs sync tests, migration tests, packaging
-validation, benchmark regression checks, and full test suite.
+CI in [.github/workflows/ci.yml](.github/workflows/ci.yml) runs linting,
+type checks, migration tests, packaging checks, benchmark regression checks,
+and the full test suite.
 
 ## Benchmarks
 
-Generate benchmark results:
+Generate synthetic benchmark results:
 
 ```powershell
 python scripts/benchmark_synthetic.py
 ```
 
-Dashboard performance benchmark (v1.2 UI):
+Dashboard performance benchmark:
 
 ```powershell
 python scripts/benchmark_dashboard.py \
   --output output/benchmarks/dashboard_latest.json
 ```
 
-This benchmark uses synthetic datasets (1k, 5k, and 10k rows) and
-measures:
-
-- page load time
-- global search latency
-- filter latency
-- sort latency
-- page graph render latency
-
-Graph benchmark covers both force-directed and hierarchical coordinate
-rendering paths,
-plus internal/external edge partitioning and depth-filtered graph subsets.
-
-Target threshold per operation is 200 ms.
-
-Latest local dashboard benchmark results:
-
-| Rows | Page load (ms) | Search (ms) | Filter (ms) | Sort (ms) | Graph (ms) |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| 1000 | 5.402 | 0.456 | 0.267 | 0.656 | 0.328 |
-| 5000 | 10.981 | 2.367 | 2.030 | 5.189 | 1.894 |
-| 10000 | 12.418 | 5.571 | 5.073 | 11.830 | 4.338 |
-
-All operations are below the 200 ms threshold.
-
-Check regressions against
-[benchmarks/baseline.json](benchmarks/baseline.json):
+Regression check:
 
 ```powershell
 python scripts/check_benchmark_regression.py \
@@ -205,35 +176,19 @@ python scripts/check_benchmark_regression.py \
   --latest output/benchmarks/latest.json
 ```
 
-## Outputs
-
-- `report.html` — interactive crawl report.
-- `stats.json` — crawl statistics and telemetry.
-- `snapshot_diff.json` — historical comparison details.
-- `findings.db` — SQLite persistence store.
-- `results.csv` — spreadsheet-oriented export.
-
 ## Screenshots
 
-Current screenshots are included in [docs/screenshots](docs/screenshots):
+See [docs/screenshots](docs/screenshots):
 
 - [report-overview.png](docs/screenshots/report-overview.png)
 - [snapshot-comparison.png](docs/screenshots/snapshot-comparison.png)
 - [performance-metrics.png](docs/screenshots/performance-metrics.png)
 - [crawl-summary.png](docs/screenshots/crawl-summary.png)
 
-## Roadmap
-
-- Additional extractor plugins.
-- More reporting options and export views.
-- Performance optimizations and scaling guidance.
-- Accessibility improvements for report UI.
-- Expanded examples and contributor documentation.
-
 ## Contributing
 
-- Open an issue with context and reproduction steps.
-- Keep PRs focused and include tests for behavioral changes.
+- Open an issue with context and reproducible steps.
+- Keep pull requests focused and include tests for behavior changes.
 - Run local quality gates before opening a PR:
   - `ruff check src tests`
   - `mypy --config-file mypy.ini`
