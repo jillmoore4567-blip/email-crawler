@@ -1,11 +1,13 @@
 # Email Extractor & Website Crawler
 
+<!-- markdownlint-disable MD013 -->
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![CI](https://github.com/jillmoore4567-blip/email-crawler/actions/workflows/ci.yml/badge.svg)](https://github.com/jillmoore4567-blip/email-crawler/actions/workflows/ci.yml)
 [![Ruff](https://img.shields.io/badge/lint-ruff-informational.svg)](https://docs.astral.sh/ruff/)
 [![mypy](https://img.shields.io/badge/type%20check-mypy-informational.svg)](https://mypy.readthedocs.io/)
 [![Tests](https://img.shields.io/badge/tests-21%20passing-success.svg)](tests)
+<!-- markdownlint-enable MD013 -->
 
 A modular Python crawler for authorized asset inventory and security
 engineering. It supports incremental crawling, SQLite persistence,
@@ -28,7 +30,8 @@ Authorized scope: authorized asset inventory and defensive/security testing.
   snapshot diff JSON, SQLite.
 - Incremental crawling and historical snapshot comparison between runs.
 - Plugin registry for extractor composition and extension.
-- Structured telemetry/observability for timing, request behavior, and queue metrics.
+- Structured telemetry/observability for timing, request behavior, and queue
+  metrics.
 - Migration-aware SQLite persistence with compatibility and fixture-based
   upgrade tests.
 
@@ -53,9 +56,12 @@ flowchart TD
 
 ### Extractor Architecture
 
-- Extractors are registered via [src/email_crawler/extractors/registry.py](src/email_crawler/extractors/registry.py).
+- Extractors are registered via
+  <!-- markdownlint-disable-next-line MD013 -->
+  [src/email_crawler/extractors/registry.py](src/email_crawler/extractors/registry.py).
 - Built-ins are registered in deterministic order.
-- The crawler composes runtime extractors through `build_default_extractors(...)`.
+- The crawler composes runtime extractors through
+  `build_default_extractors(...)`.
 
 ## Installation
 
@@ -102,8 +108,10 @@ Core options:
   - Document Type Distribution chart
   - Crawl Timing chart (fetch/extraction/intelligence/robots/wait)
   - Page Relationship Graph with force-directed and hierarchical layouts
-  - Graph controls for seed/domain/depth filters and snapshot-change highlighting
-  - Internal vs external link color coding with clickable nodes that open Page Details
+  - Graph controls for seed/domain/depth filters and snapshot-change
+    highlighting
+  - Internal vs external link color coding with clickable nodes that open
+    Page Details
 - Global search filters all findings tables.
 - Page Details panel shows all extracted artifacts for the selected page.
 - Charts can be exported as PNG or SVG.
@@ -113,22 +121,27 @@ Core options:
 
 ### Database Schema and Migrations
 
-Migrations are applied in-order from [src/email_crawler/migrations](src/email_crawler/migrations):
+Migrations are applied in-order from
+[src/email_crawler/migrations](src/email_crawler/migrations):
 
 - `001_initial.sql`
 - `002_add_runs.sql`
 - `003_page_snapshots.sql`
 - `004_provenance_layer.sql`
+- `005_snapshot_timeline_indexes.sql`
 
 The migration path preserves legacy data, is idempotent, and tracks
 final state in `schema_version`.
 
 Provenance fields and stable IDs are documented in
 [docs/PROVENANCE_MODEL.md](docs/PROVENANCE_MODEL.md).
+Historical snapshot retrieval strategy is documented in
+[docs/HISTORICAL_SNAPSHOTS_DESIGN.md](docs/HISTORICAL_SNAPSHOTS_DESIGN.md).
 
 ## Plugin System
 
-- Built-in extractor modules live under [src/email_crawler/extractors](src/email_crawler/extractors).
+- Built-in extractor modules live under
+  [src/email_crawler/extractors](src/email_crawler/extractors).
 - Custom plugins can be registered through the registry abstraction.
 - JavaScript extraction remains feature-gated by existing CLI/config settings.
 
@@ -167,14 +180,15 @@ measures:
 - sort latency
 - page graph render latency
 
-Graph benchmark covers both force-directed and hierarchical coordinate rendering paths,
+Graph benchmark covers both force-directed and hierarchical coordinate
+rendering paths,
 plus internal/external edge partitioning and depth-filtered graph subsets.
 
 Target threshold per operation is 200 ms.
 
 Latest local dashboard benchmark results:
 
-| Rows | Page load (ms) | Search (ms) | Filter (ms) | Sort (ms) | Graph render (ms) |
+| Rows | Page load (ms) | Search (ms) | Filter (ms) | Sort (ms) | Graph (ms) |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | 1000 | 5.402 | 0.456 | 0.267 | 0.656 | 0.328 |
 | 5000 | 10.981 | 2.367 | 2.030 | 5.189 | 1.894 |

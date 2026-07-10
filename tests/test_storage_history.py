@@ -6,10 +6,16 @@ from pathlib import Path
 
 from email_crawler.crawler import CrawlResult, PageFinding
 from email_crawler.intelligence import IntelligenceFinding
-from email_crawler.storage import compare_run_with_previous, load_latest_links_by_source, persist_results_sqlite
+from email_crawler.storage import (
+    compare_run_with_previous,
+    load_finding_snapshot_timeline,
+    load_latest_links_by_source,
+    load_page_snapshot_timeline,
+    persist_results_sqlite,
+)
 
 
-LATEST_SCHEMA_VERSION = 4
+LATEST_SCHEMA_VERSION = 5
 
 
 def _make_result(*, seed: str, page_url: str, title: str, emails: list[str], links: list[str]) -> CrawlResult:
@@ -91,7 +97,7 @@ def test_schema_version_table_populated(tmp_path: Path) -> None:
     finally:
         conn.close()
 
-    assert versions == [1, 2, 3, 4]
+    assert versions == [1, 2, 3, 4, 5]
 
 
 def test_incremental_unchanged_pages_not_marked_removed(tmp_path: Path) -> None:
@@ -298,7 +304,7 @@ def test_legacy_database_is_upgraded_by_migration_runner(tmp_path: Path) -> None
     finally:
         verify.close()
 
-    assert versions == [1, 2, 3, 4]
+    assert versions == [1, 2, 3, 4, 5]
     assert schema_row_count == LATEST_SCHEMA_VERSION
     assert run_count >= 2
     assert preserved_page == ("legacy-run", "https://example.test", legacy_url, "Legacy", legacy_seen_at)
@@ -308,6 +314,132 @@ def test_legacy_database_is_upgraded_by_migration_runner(tmp_path: Path) -> None
     assert diff["run_id"] == run2
     assert diff["new_pages"] == 0
     assert diff["changed_pages"] == 0
+
+
+def test_page_snapshot_timeline_is_deterministic(tmp_path: Path) -> None:
+    db_path = tmp_path / "findings.db"
+    seed = "https://example.test"
+    page_url = "https://example.test/index.html"
+
+    first = _make_result(
+        seed=seed,
+        page_url=page_url,
+        title="Home",
+        emails=["first@example.test"],
+        links=[],
+    )
+    run1 = persist_results_sqlite([first], str(db_path), config_payload={"run": 1})
+
+    second = _make_result(
+        seed=seed,
+        page_url=page_url,
+        title="Home v2",
+        emails=["second@example.test"],
+        links=[],
+    )
+    run2 = persist_results_sqlite([second], str(db_path), config_payload={"run": 2})
+
+    timeline = load_page_snapshot_timeline(str(db_path), seed_url=seed, page_url=page_url)
+
+    assert [entry["run_id"] for entry in timeline] == [run1, run2]
+    assert [entry["title"] for entry in timeline] == ["Home", "Home v2"]
+    assert timeline[0]["first_seen"] == timeline[1]["first_seen"]
+    assert timeline[0]["page_uid"] == timeline[1]["page_uid"]
+    assert timeline[0]["completed_at"] <= timeline[1]["completed_at"]
+
+
+def test_snapshot_timeline_helpers_cover_long_history(tmp_path: Path) -> None:
+    db_path = tmp_path / "findings.db"
+    seed = "https://example.test"
+    page_url = "https://example.test/history"
+
+    run_ids: list[str] = []
+    for run_number in range(1, 13):
+        result = _make_result(
+            seed=seed,
+            page_url=page_url,
+            title=f"History {run_number}",
+            emails=[f"run{run_number}@example.test"],
+            links=[f"https://example.test/{run_number}"],
+        )
+        run_ids.append(persist_results_sqlite([result], str(db_path), config_payload={"run": run_number}))
+
+    page_timeline = load_page_snapshot_timeline(str(db_path), seed_url=seed, page_url=page_url)
+    email_timeline = load_finding_snapshot_timeline(
+        str(db_path),
+        finding_type="email",
+        finding_id=f"{page_url}|run12@example.test",
+    )
+
+    assert len(page_timeline) == 12
+    assert [entry["run_id"] for entry in page_timeline] == run_ids
+    assert page_timeline[0]["title"] == "History 1"
+    assert page_timeline[-1]["title"] == "History 12"
+    assert page_timeline[-1]["content_hash"] == "hash-History 12"
+
+    assert len(email_timeline) == 1
+    assert email_timeline[0]["run_id"] == run_ids[-1]
+    assert email_timeline[0]["status"] == "present"
+
+
+def test_finding_snapshot_timeline_tracks_order_and_status_transitions(tmp_path: Path) -> None:
+    db_path = tmp_path / "findings.db"
+    seed = "https://example.test"
+    page_url = "https://example.test/transition"
+    tracked_email = "timeline@example.test"
+    finding_id = f"{page_url}|{tracked_email}"
+
+    run1 = persist_results_sqlite(
+        [
+            _make_result(
+                seed=seed,
+                page_url=page_url,
+                title="Transition 1",
+                emails=[tracked_email],
+                links=[],
+            )
+        ],
+        str(db_path),
+        config_payload={"run": 1},
+    )
+
+    run2 = persist_results_sqlite(
+        [
+            _make_result(
+                seed=seed,
+                page_url=page_url,
+                title="Transition 2",
+                emails=[],
+                links=[],
+            )
+        ],
+        str(db_path),
+        config_payload={"run": 2},
+    )
+
+    run3 = persist_results_sqlite(
+        [
+            _make_result(
+                seed=seed,
+                page_url=page_url,
+                title="Transition 3",
+                emails=[tracked_email],
+                links=[],
+            )
+        ],
+        str(db_path),
+        config_payload={"run": 3},
+    )
+
+    timeline = load_finding_snapshot_timeline(
+        str(db_path),
+        finding_type="email",
+        finding_id=finding_id,
+    )
+
+    assert [entry["run_id"] for entry in timeline] == [run1, run2, run3]
+    assert [entry["status"] for entry in timeline] == ["present", "removed", "present"]
+    assert timeline[0]["completed_at"] <= timeline[1]["completed_at"] <= timeline[2]["completed_at"]
 
 
 def test_provenance_page_and_artifact_lifecycle(tmp_path: Path) -> None:
