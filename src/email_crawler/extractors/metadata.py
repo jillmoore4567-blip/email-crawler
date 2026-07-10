@@ -13,12 +13,12 @@ class MetadataExtractor:
         description = ""
         description_tag = soup.find("meta", attrs={"name": "description"})
         if description_tag:
-            description = (description_tag.get("content") or "").strip()
+            description = str(description_tag.get("content", "") or "").strip()
 
         keywords: list[str] = []
         keywords_tag = soup.find("meta", attrs={"name": "keywords"})
         if keywords_tag:
-            raw = (keywords_tag.get("content") or "").strip()
+            raw = str(keywords_tag.get("content", "") or "").strip()
             if raw:
                 keywords = [item.strip() for item in raw.split(",") if item.strip()]
 
