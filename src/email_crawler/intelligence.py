@@ -408,8 +408,8 @@ class IntelligenceCollector:
         for entry in cert.get("subjectAltName", []):
             if isinstance(entry, tuple) and len(entry) == 2:
                 san_type, san_value = entry
-                if str(san_type) == "DNS":
-                    san_entries.append(str(san_value))
+                if san_type == "DNS" and isinstance(san_value, str):
+                    san_entries.append(san_value)
 
         details = {
             "host": host,
