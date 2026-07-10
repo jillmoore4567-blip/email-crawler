@@ -177,9 +177,11 @@ class IntelligenceCollector:
                 soup = BeautifulSoup(homepage_text, "html.parser")
                 for link in soup.find_all("link", href=True):
                     rel = " ".join(link.get("rel") or []).lower()
-                    type_attr = (link.get("type") or "").lower()
+                    type_attr = str(link.get("type", "") or "").lower()
                     if "alternate" in rel and ("rss" in type_attr or "atom" in type_attr or "xml" in type_attr):
-                        feed_candidates.add(self._canonicalize_url(urljoin(seed_url, link["href"])))
+                        href = str(link.get("href", "") or "").strip()
+                        if href:
+                            feed_candidates.add(self._canonicalize_url(urljoin(seed_url, href)))
 
             for feed_url in sorted(feed_candidates):
                 if obey_robots and not await can_fetch(feed_url):
@@ -397,9 +399,27 @@ class IntelligenceCollector:
         except OSError:
             return {"host": host, "port": port}, "error"
 
-        subject = dict(x[0] for x in cert.get("subject", [])) if cert.get("subject") else {}
-        issuer = dict(x[0] for x in cert.get("issuer", [])) if cert.get("issuer") else {}
-        san_entries = [value for key, value in cert.get("subjectAltName", []) if key == "DNS"]
+        if cert is None:
+            return {"host": host, "port": port}, "error"
+
+        subject: dict[str, str] = {}
+        for entry in cert.get("subject", []):
+            if isinstance(entry, tuple) and entry and isinstance(entry[0], tuple) and len(entry[0]) == 2:
+                key, value = entry[0]
+                subject[str(key)] = str(value)
+
+        issuer: dict[str, str] = {}
+        for entry in cert.get("issuer", []):
+            if isinstance(entry, tuple) and entry and isinstance(entry[0], tuple) and len(entry[0]) == 2:
+                key, value = entry[0]
+                issuer[str(key)] = str(value)
+
+        san_entries: list[str] = []
+        for entry in cert.get("subjectAltName", []):
+            if isinstance(entry, tuple) and len(entry) == 2:
+                san_type, san_value = entry
+                if str(san_type) == "DNS":
+                    san_entries.append(str(san_value))
 
         details = {
             "host": host,
@@ -445,7 +465,7 @@ class IntelligenceCollector:
 
     async def _capture_screenshot(self, url: str, screenshot_dir: str) -> tuple[str | None, str]:
         try:
-            from playwright.async_api import async_playwright
+            from playwright.async_api import async_playwright  # type: ignore[import-not-found]
         except ImportError:
             return None, "dependency_missing"
 
