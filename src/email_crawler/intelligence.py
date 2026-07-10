@@ -8,11 +8,14 @@ import ssl
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, cast
 from urllib.parse import urljoin, urlsplit
 
 import aiohttp
 from bs4 import BeautifulSoup
+
+CertNameEntry = tuple[tuple[str, str], ...]
+CertNameEntries = tuple[CertNameEntry, ...] | list[CertNameEntry] | None
 
 
 @dataclass(slots=True)
@@ -179,7 +182,7 @@ class IntelligenceCollector:
                     rel = " ".join(link.get("rel") or []).lower()
                     type_attr = str(link.get("type", "")).lower()
                     if "alternate" in rel and ("rss" in type_attr or "atom" in type_attr or "xml" in type_attr):
-                        href = str(link.get("href", "")).strip()
+                        href = str(link["href"]).strip()
                         feed_candidates.add(self._canonicalize_url(urljoin(seed_url, href)))
 
             for feed_url in sorted(feed_candidates):
@@ -401,8 +404,8 @@ class IntelligenceCollector:
         if cert is None:
             return {"host": host, "port": port}, "error"
 
-        subject = self._extract_cert_name_pairs(cert.get("subject", []))
-        issuer = self._extract_cert_name_pairs(cert.get("issuer", []))
+        subject = self._extract_cert_name_pairs(cast(CertNameEntries, cert.get("subject", [])))
+        issuer = self._extract_cert_name_pairs(cast(CertNameEntries, cert.get("issuer", [])))
 
         san_entries: list[str] = []
         for entry in cert.get("subjectAltName", []):
@@ -422,9 +425,9 @@ class IntelligenceCollector:
         }
         return details, "ok"
 
-    def _extract_cert_name_pairs(self, entries: object) -> dict[str, str]:
+    def _extract_cert_name_pairs(self, entries: CertNameEntries) -> dict[str, str]:
         pairs: dict[str, str] = {}
-        if not isinstance(entries, (tuple, list)):
+        if entries is None:
             return pairs
 
         for entry in entries:
