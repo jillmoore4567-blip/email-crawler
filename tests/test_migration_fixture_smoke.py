@@ -7,7 +7,7 @@ from pathlib import Path
 from email_crawler.crawler import CrawlResult, PageFinding
 from email_crawler.storage import compare_run_with_previous, persist_results_sqlite
 
-LATEST_SCHEMA_VERSION = 3
+LATEST_SCHEMA_VERSION = 4
 FIXTURE_DB = Path(__file__).resolve().parent / "fixtures" / "legacy_v1.db"
 
 
@@ -52,7 +52,7 @@ def test_legacy_fixture_migrates_and_is_idempotent(tmp_path: Path) -> None:
     finally:
         conn.close()
 
-    assert versions == [1, 2, 3]
+    assert versions == [1, 2, 3, 4]
     assert versions[-1] == LATEST_SCHEMA_VERSION
     assert preserved_legacy_page == ("Legacy Home",)
     assert preserved_legacy_email == ("legacy@fixture.test",)

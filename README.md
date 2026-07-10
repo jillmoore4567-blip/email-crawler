@@ -118,9 +118,13 @@ Migrations are applied in-order from [src/email_crawler/migrations](src/email_cr
 - `001_initial.sql`
 - `002_add_runs.sql`
 - `003_page_snapshots.sql`
+- `004_provenance_layer.sql`
 
 The migration path preserves legacy data, is idempotent, and tracks
 final state in `schema_version`.
+
+Provenance fields and stable IDs are documented in
+[docs/PROVENANCE_MODEL.md](docs/PROVENANCE_MODEL.md).
 
 ## Plugin System
 
