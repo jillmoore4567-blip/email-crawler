@@ -2,7 +2,8 @@
 
 ## Scope
 
-Improve snapshot history fidelity and retrieval primitives while preserving backward compatibility for existing SQLite datasets.
+Improve snapshot history fidelity and retrieval primitives while preserving
+backward compatibility for existing SQLite datasets.
 
 ## Retention Strategy
 
@@ -25,7 +26,8 @@ Improve snapshot history fidelity and retrieval primitives while preserving back
 - `idx_page_snapshots_run_id`
 - `idx_finding_snapshots_type_id_run`
 
-These indexes keep timeline retrieval bounded to indexed joins and lookups instead of repeated table scans.
+These indexes keep timeline retrieval bounded to indexed joins and lookups
+instead of repeated table scans.
 
 ## Performance Baseline
 
@@ -46,8 +48,10 @@ Measured large-history benchmark (local synthetic dataset):
   - tracked page timeline rows: 120
   - tracked finding timeline rows: 120
 - Query timings (milliseconds, 50 measured iterations after 5 warm-up iterations):
-  - `load_page_snapshot_timeline`: mean 8.112, median 8.039, p95 9.018, min 7.205, max 9.410
-  - `load_finding_snapshot_timeline`: mean 7.736, median 7.614, p95 8.674, min 6.573, max 10.285
+  - `load_page_snapshot_timeline`: mean 8.112, median 8.039, p95 9.018,
+    min 7.205, max 9.410
+  - `load_finding_snapshot_timeline`: mean 7.736, median 7.614, p95 8.674,
+    min 6.573, max 10.285
 - Environment:
   - OS: Windows 11 (10.0.22621)
   - Python: 3.14.6
