@@ -179,9 +179,8 @@ class IntelligenceCollector:
                     rel = " ".join(link.get("rel") or []).lower()
                     type_attr = str(link.get("type", "") or "").lower()
                     if "alternate" in rel and ("rss" in type_attr or "atom" in type_attr or "xml" in type_attr):
-                        href = str(link.get("href", "") or "").strip()
-                        if href:
-                            feed_candidates.add(self._canonicalize_url(urljoin(seed_url, href)))
+                        href = str(link["href"] or "").strip()
+                        feed_candidates.add(self._canonicalize_url(urljoin(seed_url, href)))
 
             for feed_url in sorted(feed_candidates):
                 if obey_robots and not await can_fetch(feed_url):
