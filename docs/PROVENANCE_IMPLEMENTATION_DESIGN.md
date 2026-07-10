@@ -28,6 +28,16 @@ Introduce stable identifiers and lifecycle timestamps for runs, pages, and extra
 - `last_run_id TEXT NOT NULL`
 - Indexes on `(artifact_type, artifact_value)`, `page_uid`, and `last_run_id`.
 
+### Canonical Intelligence Provenance Model
+
+- Canonical artifact type: `intelligence`.
+- Canonical artifact value: `<url>|<finding_type>`.
+- Why this model is preferred:
+  - Matches existing `finding_snapshots` key shape for intelligence entries.
+  - Avoids split namespaces (`intel:*` vs `intelligence`) that can fragment
+    lifecycle continuity.
+  - Preserves subtype granularity without introducing additional schema.
+
 ## Migration Strategy
 
 - Add migration `004_provenance.sql`.
@@ -36,6 +46,8 @@ Introduce stable identifiers and lifecycle timestamps for runs, pages, and extra
   - `crawl_runs.run_uid = run_id`
   - `pages.page_uid = sha256(seed_url + "|" + url)`
   - `pages.first_seen/last_seen = crawled_at` when missing
+  - Normalize legacy intelligence provenance rows into canonical
+    `intelligence + <url>|<finding_type>` where possible.
 - Keep older tables and constraints unchanged.
 
 ## Backward Compatibility

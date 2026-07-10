@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from email_crawler.crawler import CrawlResult, PageFinding
+from email_crawler.intelligence import IntelligenceFinding
 from email_crawler.storage import compare_run_with_previous, load_latest_links_by_source, persist_results_sqlite
 
 
@@ -339,7 +340,7 @@ def test_provenance_page_and_artifact_lifecycle(tmp_path: Path) -> None:
             SELECT run_id, page_uid, first_seen, last_seen
             FROM pages
             WHERE url = ?
-            ORDER BY run_id
+            ORDER BY last_seen ASC
             """,
             (page_url,),
         ).fetchall()
@@ -367,3 +368,141 @@ def test_provenance_page_and_artifact_lifecycle(tmp_path: Path) -> None:
         assert artifact[4] == run2
     finally:
         conn.close()
+
+
+def _make_result_with_intelligence(
+    *,
+    seed: str,
+    page_url: str,
+    title: str,
+    intelligence: list[tuple[str, str]],
+    unchanged_urls: set[str] | None = None,
+) -> CrawlResult:
+    result = CrawlResult(seed_url=seed)
+    now = datetime.now(timezone.utc)
+    result.started_at = now
+    result.finished_at = now
+    if unchanged_urls:
+        result.unchanged_urls = set(unchanged_urls)
+        result.unchanged_pages_skipped = len(unchanged_urls)
+    else:
+        result.page_findings = [
+            PageFinding(
+                url=page_url,
+                title=title,
+                description="desc",
+                keywords=["k1"],
+                content_hash=f"hash-{title}",
+                http_status=200,
+            )
+        ]
+        result.pages_crawled = 1
+        result.visited_urls = {page_url}
+    result.intelligence_findings = [
+        IntelligenceFinding(
+            finding_type=finding_type,
+            url=url,
+            status="ok",
+            details={"source": "test"},
+        )
+        for finding_type, url in intelligence
+    ]
+    return result
+
+
+def test_intelligence_provenance_lifecycle_across_runs(tmp_path: Path) -> None:
+    db_path = tmp_path / "findings.db"
+    seed = "https://example.test"
+    page_url = "https://example.test/contact"
+
+    first = _make_result_with_intelligence(
+        seed=seed,
+        page_url=page_url,
+        title="Home",
+        intelligence=[("contact_page", page_url)],
+    )
+    run1 = persist_results_sqlite([first], str(db_path), config_payload={"run": 1})
+
+    second = _make_result_with_intelligence(
+        seed=seed,
+        page_url=page_url,
+        title="Ignored",
+        intelligence=[],
+        unchanged_urls={page_url},
+    )
+    run2 = persist_results_sqlite([second], str(db_path), config_payload={"run": 2})
+
+    third = _make_result_with_intelligence(
+        seed=seed,
+        page_url=page_url,
+        title="Home v2",
+        intelligence=[("feed", page_url)],
+    )
+    run3 = persist_results_sqlite([third], str(db_path), config_payload={"run": 3})
+    diff3 = compare_run_with_previous(str(db_path), run3)
+
+    fourth = _make_result_with_intelligence(
+        seed=seed,
+        page_url=page_url,
+        title="Home v3",
+        intelligence=[],
+    )
+    run4 = persist_results_sqlite([fourth], str(db_path), config_payload={"run": 4})
+    diff4 = compare_run_with_previous(str(db_path), run4)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        # Canonical intelligence key should be stable and include subtype in artifact_value.
+        contact_row = conn.execute(
+            """
+            SELECT artifact_type, artifact_value, first_seen, last_seen, last_run_id
+            FROM artifact_provenance
+            WHERE artifact_type = 'intelligence' AND artifact_value = ?
+            """,
+            (f"{page_url}|contact_page",),
+        ).fetchone()
+        assert contact_row is not None
+        assert contact_row[0] == "intelligence"
+        assert contact_row[4] == run2
+        assert str(contact_row[2]) <= str(contact_row[3])
+
+        feed_row = conn.execute(
+            """
+            SELECT artifact_type, artifact_value, first_seen, last_seen, last_run_id
+            FROM artifact_provenance
+            WHERE artifact_type = 'intelligence' AND artifact_value = ?
+            """,
+            (f"{page_url}|feed",),
+        ).fetchone()
+        assert feed_row is not None
+        assert feed_row[4] == run3
+
+        # Ensure first_seen persists while last_seen advances for unchanged intelligence carried forward.
+        snapshots = conn.execute(
+            """
+            SELECT run_id, status
+            FROM finding_snapshots
+            WHERE finding_type = 'intelligence' AND finding_id = ?
+            ORDER BY rowid ASC
+            """,
+            (f"{page_url}|contact_page",),
+        ).fetchall()
+        assert (run1, "present") in snapshots
+        assert (run2, "present") in snapshots
+        assert (run3, "removed") in snapshots
+
+        removed_feed = conn.execute(
+            """
+            SELECT status
+            FROM finding_snapshots
+            WHERE run_id = ? AND finding_type = 'intelligence' AND finding_id = ?
+            """,
+            (run4, f"{page_url}|feed"),
+        ).fetchone()
+        assert removed_feed == ("removed",)
+    finally:
+        conn.close()
+
+    assert diff3["new_findings"] >= 1
+    assert diff3["removed_findings"] >= 1
+    assert diff4["removed_findings"] >= 1

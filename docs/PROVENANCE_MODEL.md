@@ -17,6 +17,9 @@ This document describes Issue #4 provenance tracking introduced for post-v1.2 de
   - Stable across runs for the same seed/page pair.
 - Artifact: `artifact_provenance.artifact_uid`
   - Deterministic hash of `seed_url|artifact_type|artifact_value`.
+  - Intelligence artifacts use canonical type `intelligence` with
+    value `<url>|<finding_type>` to ensure subtype-specific lifecycle
+    tracking while keeping one stable namespace.
 
 ## Lifecycle Fields
 
@@ -43,6 +46,11 @@ Migration: `src/email_crawler/migrations/004_provenance_layer.sql`
 - Migrations are additive and idempotent.
 - Existing tables and CLI/report output formats are preserved.
 - Existing databases are backfilled during migration application.
+- Legacy intelligence provenance rows are normalized to the canonical
+  format during backfill:
+  - `intel:<finding_type>` + `<url>` -> `intelligence` + `<url>|<finding_type>`
+  - `intelligence` + `<url>` is preserved and upgraded when subtype can
+    be inferred from historical snapshots.
 
 ## Query Examples
 

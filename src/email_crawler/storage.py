@@ -10,6 +10,8 @@ from uuid import uuid4
 
 from .crawler import CrawlResult
 
+INTELLIGENCE_ARTIFACT_TYPE = "intelligence"
+
 
 def persist_results_sqlite(
     results: list[CrawlResult],
@@ -85,8 +87,8 @@ def persist_results_sqlite(
                     run_id=run_id,
                     seed_url=result.seed_url,
                     page_uid=intel_page_uid,
-                    artifact_type=f"intel:{intel.finding_type}",
-                    artifact_value=intel.url,
+                    artifact_type=INTELLIGENCE_ARTIFACT_TYPE,
+                    artifact_value=f"{intel.url}|{intel.finding_type}",
                     seen_at=completed_at.isoformat(),
                 )
 
@@ -741,7 +743,7 @@ def _carry_forward_unchanged_pages(
                 run_id=current_run_id,
                 seed_url=seed_url,
                 page_uid=page_uid,
-                artifact_type=str(finding_type),
+                artifact_type=_canonical_artifact_type(str(finding_type)),
                 artifact_value=artifact_value,
                 seen_at=now,
             )
@@ -763,6 +765,12 @@ def _stable_page_uid(seed_url: str, page_url: str) -> str:
 def _stable_artifact_uid(seed_url: str, artifact_type: str, artifact_value: str) -> str:
     digest = hashlib.sha256(f"{seed_url}|{artifact_type}|{artifact_value}".encode("utf-8")).hexdigest()
     return f"art-{digest[:24]}"
+
+
+def _canonical_artifact_type(finding_type: str) -> str:
+    if finding_type == "intelligence":
+        return INTELLIGENCE_ARTIFACT_TYPE
+    return finding_type
 
 
 def _resolve_page_first_seen(conn: sqlite3.Connection, page_uid: str, default_seen_at: str) -> str:
@@ -814,8 +822,7 @@ def _artifact_value_from_finding_id(finding_type: str, finding_id: str, page_url
         if "|" in finding_id:
             return finding_id.split("|", 1)[1]
     if finding_type == "intelligence":
-        if "|" in finding_id:
-            return finding_id.split("|", 1)[0]
+        return finding_id
     if finding_id == page_url:
         return None
     return finding_id
@@ -824,8 +831,14 @@ def _artifact_value_from_finding_id(finding_type: str, finding_id: str, page_url
 def _backfill_provenance_columns(conn: sqlite3.Connection) -> None:
     conn.execute("UPDATE crawl_runs SET run_uid = run_id WHERE run_uid IS NULL OR run_uid = ''")
 
+    _migrate_legacy_intelligence_artifacts(conn)
+
     page_rows = conn.execute(
-        "SELECT id, seed_url, url, crawled_at, page_uid, first_seen, last_seen FROM pages"
+        """
+        SELECT id, seed_url, url, crawled_at, page_uid, first_seen, last_seen
+        FROM pages
+        WHERE page_uid IS NULL OR page_uid = '' OR first_seen IS NULL OR first_seen = '' OR last_seen IS NULL OR last_seen = ''
+        """
     ).fetchall()
     for row in page_rows:
         page_id = int(row[0])
@@ -839,6 +852,83 @@ def _backfill_provenance_columns(conn: sqlite3.Connection) -> None:
             "UPDATE pages SET page_uid = ?, first_seen = ?, last_seen = ? WHERE id = ?",
             (page_uid, first_seen, last_seen, page_id),
         )
+
+
+def _migrate_legacy_intelligence_artifacts(conn: sqlite3.Connection) -> None:
+    # Backward compatibility for pre-canonical rows:
+    # 1) artifact_type like intel:<subtype>, artifact_value=<url>
+    # 2) artifact_type=intelligence, artifact_value=<url>
+    legacy_rows = conn.execute(
+        """
+        SELECT artifact_uid, seed_url, page_uid, artifact_type, artifact_value, first_seen, last_seen, last_run_id
+        FROM artifact_provenance
+        WHERE artifact_type LIKE 'intel:%'
+           OR (artifact_type = ? AND artifact_value NOT LIKE '%|%')
+        """,
+        (INTELLIGENCE_ARTIFACT_TYPE,),
+    ).fetchall()
+
+    for row in legacy_rows:
+        legacy_uid = str(row[0])
+        seed_url = str(row[1] or "")
+        page_uid = str(row[2]) if row[2] else None
+        legacy_type = str(row[3] or "")
+        legacy_value = str(row[4] or "")
+        first_seen = str(row[5] or datetime.now(timezone.utc).isoformat())
+        last_seen = str(row[6] or first_seen)
+        last_run_id = str(row[7] or "")
+
+        subtype = ""
+        canonical_value = legacy_value
+        if legacy_type.startswith("intel:"):
+            subtype = legacy_type.split(":", 1)[1]
+            canonical_value = f"{legacy_value}|{subtype}" if subtype else legacy_value
+        elif legacy_type == INTELLIGENCE_ARTIFACT_TYPE and "|" not in legacy_value and legacy_value:
+            finding_row = conn.execute(
+                """
+                SELECT finding_id
+                FROM finding_snapshots
+                WHERE run_id = ? AND finding_type = 'intelligence' AND finding_id LIKE ?
+                ORDER BY finding_id
+                LIMIT 1
+                """,
+                (last_run_id, f"{legacy_value}|%"),
+            ).fetchone()
+            if finding_row and finding_row[0]:
+                canonical_value = str(finding_row[0])
+
+        if not canonical_value:
+            continue
+
+        canonical_uid = _stable_artifact_uid(seed_url, INTELLIGENCE_ARTIFACT_TYPE, canonical_value)
+        conn.execute(
+            """
+            INSERT INTO artifact_provenance (
+                artifact_uid, artifact_type, seed_url, page_uid, artifact_value, first_seen, last_seen, last_run_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(artifact_uid) DO UPDATE SET
+                first_seen = MIN(artifact_provenance.first_seen, excluded.first_seen),
+                last_seen = MAX(artifact_provenance.last_seen, excluded.last_seen),
+                last_run_id = CASE
+                    WHEN excluded.last_seen >= artifact_provenance.last_seen THEN excluded.last_run_id
+                    ELSE artifact_provenance.last_run_id
+                END,
+                page_uid = COALESCE(artifact_provenance.page_uid, excluded.page_uid)
+            """,
+            (
+                canonical_uid,
+                INTELLIGENCE_ARTIFACT_TYPE,
+                seed_url,
+                page_uid,
+                canonical_value,
+                first_seen,
+                last_seen,
+                last_run_id,
+            ),
+        )
+
+        if legacy_uid != canonical_uid:
+            conn.execute("DELETE FROM artifact_provenance WHERE artifact_uid = ?", (legacy_uid,))
 
 
 def _load_pages_by_url(conn: sqlite3.Connection, run_id: str) -> dict[str, dict[str, str]]:
