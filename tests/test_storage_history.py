@@ -8,7 +8,7 @@ from email_crawler.crawler import CrawlResult, PageFinding
 from email_crawler.storage import compare_run_with_previous, load_latest_links_by_source, persist_results_sqlite
 
 
-LATEST_SCHEMA_VERSION = 3
+LATEST_SCHEMA_VERSION = 4
 
 
 def _make_result(*, seed: str, page_url: str, title: str, emails: list[str], links: list[str]) -> CrawlResult:
@@ -90,7 +90,7 @@ def test_schema_version_table_populated(tmp_path: Path) -> None:
     finally:
         conn.close()
 
-    assert versions == [1, 2, 3]
+    assert versions == [1, 2, 3, 4]
 
 
 def test_incremental_unchanged_pages_not_marked_removed(tmp_path: Path) -> None:
@@ -297,7 +297,7 @@ def test_legacy_database_is_upgraded_by_migration_runner(tmp_path: Path) -> None
     finally:
         verify.close()
 
-    assert versions == [1, 2, 3]
+    assert versions == [1, 2, 3, 4]
     assert schema_row_count == LATEST_SCHEMA_VERSION
     assert run_count >= 2
     assert preserved_page == ("legacy-run", "https://example.test", legacy_url, "Legacy", legacy_seen_at)
@@ -307,3 +307,63 @@ def test_legacy_database_is_upgraded_by_migration_runner(tmp_path: Path) -> None
     assert diff["run_id"] == run2
     assert diff["new_pages"] == 0
     assert diff["changed_pages"] == 0
+
+
+def test_provenance_page_and_artifact_lifecycle(tmp_path: Path) -> None:
+    db_path = tmp_path / "findings.db"
+    seed = "https://example.test"
+    page_url = "https://example.test/index.html"
+
+    first = _make_result(
+        seed=seed,
+        page_url=page_url,
+        title="Home",
+        emails=["info@example.test"],
+        links=["https://example.test/about.html"],
+    )
+    persist_results_sqlite([first], str(db_path), config_payload={"run": 1})
+
+    second = _make_result(
+        seed=seed,
+        page_url=page_url,
+        title="Home v2",
+        emails=["info@example.test"],
+        links=["https://example.test/about.html", "https://example.test/contact.html"],
+    )
+    run2 = persist_results_sqlite([second], str(db_path), config_payload={"run": 2})
+
+    conn = sqlite3.connect(db_path)
+    try:
+        page_rows = conn.execute(
+            """
+            SELECT run_id, page_uid, first_seen, last_seen
+            FROM pages
+            WHERE url = ?
+            ORDER BY run_id
+            """,
+            (page_url,),
+        ).fetchall()
+        assert len(page_rows) == 2
+        assert page_rows[0][1] == page_rows[1][1]
+        assert page_rows[0][2] == page_rows[1][2]
+        assert page_rows[1][3] >= page_rows[1][2]
+
+        run_uid_row = conn.execute(
+            "SELECT run_uid FROM crawl_runs WHERE run_id = ?",
+            (run2,),
+        ).fetchone()
+        assert run_uid_row == (run2,)
+
+        artifact_rows = conn.execute(
+            """
+            SELECT artifact_type, artifact_value, first_seen, last_seen, last_run_id
+            FROM artifact_provenance
+            WHERE artifact_type = 'email' AND artifact_value = 'info@example.test'
+            """
+        ).fetchall()
+        assert len(artifact_rows) == 1
+        artifact = artifact_rows[0]
+        assert artifact[2] <= artifact[3]
+        assert artifact[4] == run2
+    finally:
+        conn.close()

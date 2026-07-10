@@ -19,6 +19,7 @@ def persist_results_sqlite(
     crawler_version: str = "0.1.0",
 ) -> str:
     run_id = f"run-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:8]}"
+    run_uid = run_id
     started_at = min((result.started_at for result in results), default=datetime.now(timezone.utc))
     completed_at = max(
         ((result.finished_at or result.started_at) for result in results),
@@ -40,11 +41,12 @@ def persist_results_sqlite(
         conn.execute(
             """
             INSERT OR REPLACE INTO crawl_runs (
-                run_id, started_at, completed_at, seed_url, config_hash, crawler_version, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                run_id, run_uid, started_at, completed_at, seed_url, config_hash, crawler_version, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
+                run_uid,
                 started_at.isoformat(),
                 completed_at.isoformat(),
                 seeds_joined,
@@ -57,9 +59,11 @@ def persist_results_sqlite(
         previous_run_id = _get_previous_run_id(conn, run_id)
 
         current_finding_ids: dict[str, set[str]] = {}
+        page_first_seen_cache: dict[str, str] = {}
 
         for result in results:
             for intel in result.intelligence_findings:
+                intel_page_uid = _stable_page_uid(result.seed_url, intel.url)
                 conn.execute(
                     """
                     INSERT OR IGNORE INTO intelligence_findings (
@@ -76,18 +80,34 @@ def persist_results_sqlite(
                     ),
                 )
                 _add_finding(current_finding_ids, "intelligence", f"{intel.url}|{intel.finding_type}")
+                _upsert_artifact_provenance(
+                    conn,
+                    run_id=run_id,
+                    seed_url=result.seed_url,
+                    page_uid=intel_page_uid,
+                    artifact_type=f"intel:{intel.finding_type}",
+                    artifact_value=intel.url,
+                    seen_at=completed_at.isoformat(),
+                )
 
             for finding in result.page_findings:
                 _add_finding(current_finding_ids, "page", finding.url)
+                page_uid = _stable_page_uid(result.seed_url, finding.url)
+                first_seen = page_first_seen_cache.get(page_uid)
+                if not first_seen:
+                    first_seen = _resolve_page_first_seen(conn, page_uid, completed_at.isoformat())
+                    page_first_seen_cache[page_uid] = first_seen
                 conn.execute(
                     """
                     INSERT OR REPLACE INTO pages (
-                        run_id, seed_url, url, title, description, keywords, crawled_at, content_hash, http_status
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        run_id, seed_url, page_uid, url, title, description, keywords,
+                        crawled_at, content_hash, http_status, first_seen, last_seen
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         run_id,
                         result.seed_url,
+                        page_uid,
                         finding.url,
                         finding.title,
                         finding.description,
@@ -95,6 +115,8 @@ def persist_results_sqlite(
                         datetime.now(timezone.utc).isoformat(),
                         finding.content_hash,
                         finding.http_status,
+                        first_seen,
+                        completed_at.isoformat(),
                     ),
                 )
 
@@ -125,6 +147,15 @@ def persist_results_sqlite(
                         (run_id, finding.url, link),
                     )
                     _add_finding(current_finding_ids, "link", f"{finding.url}|{link}")
+                    _upsert_artifact_provenance(
+                        conn,
+                        run_id=run_id,
+                        seed_url=result.seed_url,
+                        page_uid=page_uid,
+                        artifact_type="link",
+                        artifact_value=f"{finding.url}|{link}",
+                        seen_at=completed_at.isoformat(),
+                    )
 
                 for email in finding.emails:
                     conn.execute(
@@ -132,6 +163,15 @@ def persist_results_sqlite(
                         (run_id, finding.url, email),
                     )
                     _add_finding(current_finding_ids, "email", f"{finding.url}|{email}")
+                    _upsert_artifact_provenance(
+                        conn,
+                        run_id=run_id,
+                        seed_url=result.seed_url,
+                        page_uid=page_uid,
+                        artifact_type="email",
+                        artifact_value=email,
+                        seen_at=completed_at.isoformat(),
+                    )
 
                 for phone in finding.phones:
                     conn.execute(
@@ -139,6 +179,15 @@ def persist_results_sqlite(
                         (run_id, finding.url, phone),
                     )
                     _add_finding(current_finding_ids, "phone", f"{finding.url}|{phone}")
+                    _upsert_artifact_provenance(
+                        conn,
+                        run_id=run_id,
+                        seed_url=result.seed_url,
+                        page_uid=page_uid,
+                        artifact_type="phone",
+                        artifact_value=phone,
+                        seen_at=completed_at.isoformat(),
+                    )
 
                 for doc in finding.documents:
                     conn.execute(
@@ -146,6 +195,15 @@ def persist_results_sqlite(
                         (run_id, finding.url, doc),
                     )
                     _add_finding(current_finding_ids, "document", f"{finding.url}|{doc}")
+                    _upsert_artifact_provenance(
+                        conn,
+                        run_id=run_id,
+                        seed_url=result.seed_url,
+                        page_uid=page_uid,
+                        artifact_type="document",
+                        artifact_value=doc,
+                        seen_at=completed_at.isoformat(),
+                    )
 
                 for profile in finding.social_accounts:
                     conn.execute(
@@ -153,6 +211,15 @@ def persist_results_sqlite(
                         (run_id, finding.url, profile),
                     )
                     _add_finding(current_finding_ids, "social_profile", f"{finding.url}|{profile}")
+                    _upsert_artifact_provenance(
+                        conn,
+                        run_id=run_id,
+                        seed_url=result.seed_url,
+                        page_uid=page_uid,
+                        artifact_type="social_profile",
+                        artifact_value=profile,
+                        seen_at=completed_at.isoformat(),
+                    )
 
                 for image_url in finding.images:
                     conn.execute(
@@ -160,6 +227,15 @@ def persist_results_sqlite(
                         (run_id, finding.url, image_url),
                     )
                     _add_finding(current_finding_ids, "image", f"{finding.url}|{image_url}")
+                    _upsert_artifact_provenance(
+                        conn,
+                        run_id=run_id,
+                        seed_url=result.seed_url,
+                        page_uid=page_uid,
+                        artifact_type="image",
+                        artifact_value=image_url,
+                        seen_at=completed_at.isoformat(),
+                    )
 
                 for js_url in finding.javascript_assets:
                     conn.execute(
@@ -167,6 +243,15 @@ def persist_results_sqlite(
                         (run_id, finding.url, js_url),
                     )
                     _add_finding(current_finding_ids, "javascript_asset", f"{finding.url}|{js_url}")
+                    _upsert_artifact_provenance(
+                        conn,
+                        run_id=run_id,
+                        seed_url=result.seed_url,
+                        page_uid=page_uid,
+                        artifact_type="javascript_asset",
+                        artifact_value=js_url,
+                        seen_at=completed_at.isoformat(),
+                    )
 
                 for tech in finding.technologies:
                     conn.execute(
@@ -174,6 +259,15 @@ def persist_results_sqlite(
                         (run_id, finding.url, tech),
                     )
                     _add_finding(current_finding_ids, "technology", f"{finding.url}|{tech}")
+                    _upsert_artifact_provenance(
+                        conn,
+                        run_id=run_id,
+                        seed_url=result.seed_url,
+                        page_uid=page_uid,
+                        artifact_type="technology",
+                        artifact_value=tech,
+                        seen_at=completed_at.isoformat(),
+                    )
 
                 for header_name, header_value in finding.security_headers.items():
                     conn.execute(
@@ -185,6 +279,15 @@ def persist_results_sqlite(
                         "security_header",
                         f"{finding.url}|{header_name}:{header_value}",
                     )
+                    _upsert_artifact_provenance(
+                        conn,
+                        run_id=run_id,
+                        seed_url=result.seed_url,
+                        page_uid=page_uid,
+                        artifact_type="security_header",
+                        artifact_value=f"{header_name}:{header_value}",
+                        seen_at=completed_at.isoformat(),
+                    )
 
                 for broken_url in finding.broken_links:
                     conn.execute(
@@ -192,6 +295,15 @@ def persist_results_sqlite(
                         (run_id, finding.url, broken_url),
                     )
                     _add_finding(current_finding_ids, "broken_link", f"{finding.url}|{broken_url}")
+                    _upsert_artifact_provenance(
+                        conn,
+                        run_id=run_id,
+                        seed_url=result.seed_url,
+                        page_uid=page_uid,
+                        artifact_type="broken_link",
+                        artifact_value=broken_url,
+                        seen_at=completed_at.isoformat(),
+                    )
 
             if result.unchanged_urls and previous_run_id:
                 _carry_forward_unchanged_pages(
@@ -201,6 +313,7 @@ def persist_results_sqlite(
                     result.seed_url,
                     sorted(result.unchanged_urls),
                     current_finding_ids,
+                    page_first_seen_cache,
                 )
         previous_finding_ids = _load_finding_snapshot_ids(conn, previous_run_id)
 
@@ -461,6 +574,16 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "pages", "keywords", "TEXT")
     _ensure_column(conn, "pages", "content_hash", "TEXT")
     _ensure_column(conn, "pages", "http_status", "INTEGER")
+    _ensure_column(conn, "crawl_runs", "run_uid", "TEXT")
+    _ensure_column(conn, "pages", "page_uid", "TEXT")
+    _ensure_column(conn, "pages", "first_seen", "TEXT")
+    _ensure_column(conn, "pages", "last_seen", "TEXT")
+
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_crawl_runs_run_uid ON crawl_runs(run_uid)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_pages_page_uid ON pages(page_uid)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_pages_seed_page_uid ON pages(seed_url, page_uid)")
+
+    _backfill_provenance_columns(conn)
 
 
 def _latest_completed_run_id(conn: sqlite3.Connection) -> str | None:
@@ -515,12 +638,13 @@ def _carry_forward_unchanged_pages(
     seed_url: str,
     urls: list[str],
     current_finding_ids: dict[str, set[str]],
+    page_first_seen_cache: dict[str, str],
 ) -> None:
     now = datetime.now(timezone.utc).isoformat()
     for url in urls:
         prev_page = conn.execute(
             """
-            SELECT title, description, keywords, content_hash, http_status
+            SELECT title, description, keywords, content_hash, http_status, page_uid, first_seen
             FROM pages
             WHERE run_id = ? AND url = ?
             """,
@@ -529,15 +653,21 @@ def _carry_forward_unchanged_pages(
         if not prev_page:
             continue
 
+        page_uid = str(prev_page[5] or _stable_page_uid(seed_url, url))
+        first_seen = str(prev_page[6] or page_first_seen_cache.get(page_uid) or _resolve_page_first_seen(conn, page_uid, now))
+        page_first_seen_cache[page_uid] = first_seen
+
         conn.execute(
             """
             INSERT OR REPLACE INTO pages (
-                run_id, seed_url, url, title, description, keywords, crawled_at, content_hash, http_status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                run_id, seed_url, page_uid, url, title, description, keywords,
+                crawled_at, content_hash, http_status, first_seen, last_seen
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 current_run_id,
                 seed_url,
+                page_uid,
                 url,
                 prev_page[0],
                 prev_page[1],
@@ -545,6 +675,8 @@ def _carry_forward_unchanged_pages(
                 now,
                 prev_page[3],
                 prev_page[4],
+                first_seen,
+                now,
             ),
         )
 
@@ -600,6 +732,20 @@ def _carry_forward_unchanged_pages(
                 (current_run_id, url, str(target_url)),
             )
 
+        for finding_type, finding_id in prev_findings:
+            artifact_value = _artifact_value_from_finding_id(str(finding_type), str(finding_id), url)
+            if artifact_value is None:
+                continue
+            _upsert_artifact_provenance(
+                conn,
+                run_id=current_run_id,
+                seed_url=seed_url,
+                page_uid=page_uid,
+                artifact_type=str(finding_type),
+                artifact_value=artifact_value,
+                seen_at=now,
+            )
+
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, column_type: str) -> None:
     info = conn.execute(f"PRAGMA table_info({table})").fetchall()
@@ -607,6 +753,92 @@ def _ensure_column(conn: sqlite3.Connection, table: str, column: str, column_typ
     if column in existing:
         return
     conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
+
+
+def _stable_page_uid(seed_url: str, page_url: str) -> str:
+    digest = hashlib.sha256(f"{seed_url}|{page_url}".encode("utf-8")).hexdigest()
+    return f"page-{digest[:24]}"
+
+
+def _stable_artifact_uid(seed_url: str, artifact_type: str, artifact_value: str) -> str:
+    digest = hashlib.sha256(f"{seed_url}|{artifact_type}|{artifact_value}".encode("utf-8")).hexdigest()
+    return f"art-{digest[:24]}"
+
+
+def _resolve_page_first_seen(conn: sqlite3.Connection, page_uid: str, default_seen_at: str) -> str:
+    row = conn.execute(
+        "SELECT first_seen FROM pages WHERE page_uid = ? AND first_seen IS NOT NULL ORDER BY first_seen ASC LIMIT 1",
+        (page_uid,),
+    ).fetchone()
+    if row and row[0]:
+        return str(row[0])
+    return default_seen_at
+
+
+def _upsert_artifact_provenance(
+    conn: sqlite3.Connection,
+    *,
+    run_id: str,
+    seed_url: str,
+    page_uid: str | None,
+    artifact_type: str,
+    artifact_value: str,
+    seen_at: str,
+) -> None:
+    if not artifact_value:
+        return
+    artifact_uid = _stable_artifact_uid(seed_url, artifact_type, artifact_value)
+    conn.execute(
+        """
+        INSERT INTO artifact_provenance (
+            artifact_uid, artifact_type, seed_url, page_uid, artifact_value, first_seen, last_seen, last_run_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(artifact_uid) DO UPDATE SET
+            last_seen = excluded.last_seen,
+            last_run_id = excluded.last_run_id,
+            page_uid = COALESCE(excluded.page_uid, artifact_provenance.page_uid)
+        """,
+        (artifact_uid, artifact_type, seed_url, page_uid, artifact_value, seen_at, seen_at, run_id),
+    )
+
+
+def _artifact_value_from_finding_id(finding_type: str, finding_id: str, page_url: str) -> str | None:
+    if finding_type in {"page"}:
+        return None
+    if finding_type in {"email", "phone", "document", "social_profile", "image", "javascript_asset", "technology", "broken_link"}:
+        if "|" in finding_id:
+            return finding_id.split("|", 1)[1]
+    if finding_type == "link":
+        return finding_id
+    if finding_type == "security_header":
+        if "|" in finding_id:
+            return finding_id.split("|", 1)[1]
+    if finding_type == "intelligence":
+        if "|" in finding_id:
+            return finding_id.split("|", 1)[0]
+    if finding_id == page_url:
+        return None
+    return finding_id
+
+
+def _backfill_provenance_columns(conn: sqlite3.Connection) -> None:
+    conn.execute("UPDATE crawl_runs SET run_uid = run_id WHERE run_uid IS NULL OR run_uid = ''")
+
+    page_rows = conn.execute(
+        "SELECT id, seed_url, url, crawled_at, page_uid, first_seen, last_seen FROM pages"
+    ).fetchall()
+    for row in page_rows:
+        page_id = int(row[0])
+        seed_url = str(row[1] or "")
+        url = str(row[2] or "")
+        crawled_at = str(row[3] or datetime.now(timezone.utc).isoformat())
+        page_uid = str(row[4] or _stable_page_uid(seed_url, url))
+        first_seen = str(row[5] or crawled_at)
+        last_seen = str(row[6] or crawled_at)
+        conn.execute(
+            "UPDATE pages SET page_uid = ?, first_seen = ?, last_seen = ? WHERE id = ?",
+            (page_uid, first_seen, last_seen, page_id),
+        )
 
 
 def _load_pages_by_url(conn: sqlite3.Connection, run_id: str) -> dict[str, dict[str, str]]:
