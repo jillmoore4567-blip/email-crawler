@@ -179,7 +179,7 @@ class IntelligenceCollector:
                     rel = " ".join(link.get("rel") or []).lower()
                     type_attr = str(link.get("type", "") or "").lower()
                     if "alternate" in rel and ("rss" in type_attr or "atom" in type_attr or "xml" in type_attr):
-                        href = str(link["href"] or "").strip()
+                        href = str(link.get("href", "")).strip()
                         feed_candidates.add(self._canonicalize_url(urljoin(seed_url, href)))
 
             for feed_url in sorted(feed_candidates):
@@ -401,17 +401,8 @@ class IntelligenceCollector:
         if cert is None:
             return {"host": host, "port": port}, "error"
 
-        subject: dict[str, str] = {}
-        for entry in cert.get("subject", []):
-            if isinstance(entry, tuple) and entry and isinstance(entry[0], tuple) and len(entry[0]) == 2:
-                key, value = entry[0]
-                subject[str(key)] = str(value)
-
-        issuer: dict[str, str] = {}
-        for entry in cert.get("issuer", []):
-            if isinstance(entry, tuple) and entry and isinstance(entry[0], tuple) and len(entry[0]) == 2:
-                key, value = entry[0]
-                issuer[str(key)] = str(value)
+        subject = self._extract_cert_name_pairs(cert.get("subject", []))
+        issuer = self._extract_cert_name_pairs(cert.get("issuer", []))
 
         san_entries: list[str] = []
         for entry in cert.get("subjectAltName", []):
@@ -430,6 +421,17 @@ class IntelligenceCollector:
             "san_dns": san_entries[:100],
         }
         return details, "ok"
+
+    def _extract_cert_name_pairs(self, entries: object) -> dict[str, str]:
+        pairs: dict[str, str] = {}
+        if not isinstance(entries, tuple | list):
+            return pairs
+
+        for entry in entries:
+            if isinstance(entry, tuple) and entry and isinstance(entry[0], tuple) and len(entry[0]) == 2:
+                key, value = entry[0]
+                pairs[str(key)] = str(value)
+        return pairs
 
     async def _collect_subdomains(self, session: aiohttp.ClientSession, domain: str) -> tuple[dict, str]:
         url = f"https://crt.sh/?q=%25.{domain}&output=json"
