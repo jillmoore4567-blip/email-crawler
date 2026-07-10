@@ -26,7 +26,7 @@ jobs:
 
       - name: Ruff lint
         run: |
-          ruff check src tests
+          ruff check src tests scripts
 
       - name: Type check (advisory broad pass)
         continue-on-error: true

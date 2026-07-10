@@ -9,6 +9,41 @@ and this project adheres to Semantic Versioning.
 
 - No unreleased changes.
 
+## [1.2.0] - 2026-07-09
+
+Investigation-focused dashboard release that expands change analysis,
+interactive reporting, and graph exploration without changing crawler
+engine behavior or report output schemas.
+
+### Added
+
+- Interactive analytics dashboard panels for crawl metrics, email-domain
+  distribution, document types, and crawl timing.
+- Global table search/filter/sort and persistent dashboard filter state.
+- Page Details panel with extracted artifacts and security-header context.
+- Snapshot comparison table with page-level change filtering and sort.
+- Page relationship graph using existing link graph data with:
+  - force-directed and hierarchical layouts,
+  - zoom/pan interactions,
+  - seed/domain/depth/snapshot/link-type filters,
+  - node click-through to existing page details,
+  - internal vs external link edge coloring.
+- Dashboard benchmark coverage for graph render latency on synthetic
+  datasets (1k/5k/10k rows).
+- Documentation page for graph visualization behavior and constraints.
+
+### Improved
+
+- Chart export supports PNG and SVG.
+- Dashboard supports dark mode toggle and responsive/mobile layout.
+- Integration tests assert presence of new dashboard and graph controls.
+
+### Validation
+
+- Ruff, mypy, and pytest all pass for release candidate.
+- Dashboard benchmark remains below 200 ms threshold for all measured
+  operations, including graph render latency.
+
 ## [1.0.0] - 2026-07-08
 
 First stable release focused on observability, migration safety,

@@ -5,7 +5,7 @@
 [![CI](https://github.com/jillmoore4567-blip/email-crawler/actions/workflows/ci.yml/badge.svg)](https://github.com/jillmoore4567-blip/email-crawler/actions/workflows/ci.yml)
 [![Ruff](https://img.shields.io/badge/lint-ruff-informational.svg)](https://docs.astral.sh/ruff/)
 [![mypy](https://img.shields.io/badge/type%20check-mypy-informational.svg)](https://mypy.readthedocs.io/)
-[![Tests](https://img.shields.io/badge/tests-19%20passing-success.svg)](tests)
+[![Tests](https://img.shields.io/badge/tests-21%20passing-success.svg)](tests)
 
 A modular Python crawler for authorized asset inventory and security
 engineering. It supports incremental crawling, SQLite persistence,
@@ -147,7 +147,7 @@ Generate benchmark results:
 python scripts/benchmark_synthetic.py
 ```
 
-Dashboard performance benchmark (Phase 1 UI):
+Dashboard performance benchmark (v1.2 UI):
 
 ```powershell
 python scripts/benchmark_dashboard.py \

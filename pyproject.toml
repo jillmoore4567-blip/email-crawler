@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "email-crawler"
-version = "1.0.0"
+version = "1.2.0"
 description = "Authorized asset inventory crawler with incremental crawling, SQLite history, snapshot diffs, and plugin-based extraction"
 readme = "README.md"
 requires-python = ">=3.10"
