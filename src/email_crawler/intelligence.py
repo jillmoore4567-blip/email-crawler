@@ -177,7 +177,7 @@ class IntelligenceCollector:
                 soup = BeautifulSoup(homepage_text, "html.parser")
                 for link in soup.find_all("link", href=True):
                     rel = " ".join(link.get("rel") or []).lower()
-                    type_attr = str(link.get("type", "") or "").lower()
+                    type_attr = str(link.get("type", "")).lower()
                     if "alternate" in rel and ("rss" in type_attr or "atom" in type_attr or "xml" in type_attr):
                         href = str(link.get("href", "")).strip()
                         feed_candidates.add(self._canonicalize_url(urljoin(seed_url, href)))
@@ -424,7 +424,7 @@ class IntelligenceCollector:
 
     def _extract_cert_name_pairs(self, entries: object) -> dict[str, str]:
         pairs: dict[str, str] = {}
-        if not isinstance(entries, tuple | list):
+        if not isinstance(entries, (tuple, list)):
             return pairs
 
         for entry in entries:
