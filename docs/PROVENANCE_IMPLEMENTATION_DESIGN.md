@@ -7,32 +7,36 @@ Introduce stable identifiers and lifecycle timestamps for runs, pages, and extra
 ## Database Schema Changes
 
 1. `crawl_runs`
-- Add `run_uid TEXT` (stable run identifier).
-- Backfill existing rows with `run_id`.
-- Add unique index on `run_uid`.
+
+  - Add `run_uid TEXT` (stable run identifier).
+  - Backfill existing rows with `run_id`.
+  - Add unique index on `run_uid`.
 
 2. `pages`
-- Add `page_uid TEXT` (stable page identifier across runs).
-- Add `first_seen TEXT`.
-- Add `last_seen TEXT`.
-- Add index on `page_uid` and `(seed_url, page_uid)`.
+
+  - Add `page_uid TEXT` (stable page identifier across runs).
+  - Add `first_seen TEXT`.
+  - Add `last_seen TEXT`.
+  - Add index on `page_uid` and `(seed_url, page_uid)`.
 
 3. New table: `artifact_provenance`
-- `artifact_uid TEXT PRIMARY KEY`
-- `artifact_type TEXT NOT NULL`
-- `seed_url TEXT NOT NULL`
-- `page_uid TEXT`
-- `artifact_value TEXT NOT NULL`
-- `first_seen TEXT NOT NULL`
-- `last_seen TEXT NOT NULL`
-- `last_run_id TEXT NOT NULL`
-- Indexes on `(artifact_type, artifact_value)`, `page_uid`, and `last_run_id`.
+
+  - `artifact_uid TEXT PRIMARY KEY`
+  - `artifact_type TEXT NOT NULL`
+  - `seed_url TEXT NOT NULL`
+  - `page_uid TEXT`
+  - `artifact_value TEXT NOT NULL`
+  - `first_seen TEXT NOT NULL`
+  - `last_seen TEXT NOT NULL`
+  - `last_run_id TEXT NOT NULL`
+  - Indexes on `(artifact_type, artifact_value)`, `page_uid`, and `last_run_id`.
 
 ### Canonical Intelligence Provenance Model
 
 - Canonical artifact type: `intelligence`.
 - Canonical artifact value: `<url>|<finding_type>`.
 - Why this model is preferred:
+
   - Matches existing `finding_snapshots` key shape for intelligence entries.
   - Avoids split namespaces (`intel:*` vs `intelligence`) that can fragment
     lifecycle continuity.
@@ -43,11 +47,13 @@ Introduce stable identifiers and lifecycle timestamps for runs, pages, and extra
 - Add migration `004_provenance.sql`.
 - Migration is additive only (no destructive operations).
 - Backfill:
+
   - `crawl_runs.run_uid = run_id`
   - `pages.page_uid = sha256(seed_url + "|" + url)`
   - `pages.first_seen/last_seen = crawled_at` when missing
   - Normalize legacy intelligence provenance rows into canonical
     `intelligence + <url>|<finding_type>` where possible.
+
 - Keep older tables and constraints unchanged.
 
 ## Backward Compatibility
@@ -66,17 +72,20 @@ Introduce stable identifiers and lifecycle timestamps for runs, pages, and extra
 ## Testing Plan
 
 1. Migration tests:
-- Schema version increments to 4.
-- Legacy DB migration preserves old rows and backfills new provenance columns.
+
+  - Schema version increments to 4.
+  - Legacy DB migration preserves old rows and backfills new provenance columns.
 
 2. Provenance correctness tests:
-- `first_seen` is immutable over subsequent runs.
-- `last_seen` advances for observed pages/artifacts.
-- `page_uid` and `artifact_uid` are stable across runs.
+
+  - `first_seen` is immutable over subsequent runs.
+  - `last_seen` advances for observed pages/artifacts.
+  - `page_uid` and `artifact_uid` are stable across runs.
 
 3. Integration regression:
-- Existing end-to-end CLI and report tests remain green.
-- No behavior regressions in snapshot comparison logic.
+
+  - Existing end-to-end CLI and report tests remain green.
+  - No behavior regressions in snapshot comparison logic.
 
 ## Incremental Implementation Plan
 
