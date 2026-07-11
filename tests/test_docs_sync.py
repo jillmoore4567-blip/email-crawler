@@ -16,24 +16,26 @@ def test_readme_contains_required_engineering_sections() -> None:
     text = README_PATH.read_text(encoding="utf-8")
     required_sections = [
         "# Email Extractor & Website Crawler",
-        "## Features",
+        "## Why This Project",
         "## Architecture",
         "## Installation",
         "## Quick Start",
+        "## Live Monitoring",
         "## Configuration",
-        "## Reports",
-        "## Database Schema",
-        "## Plugin System",
-        "## Testing",
+        "## Reports And Outputs",
+        "## Database And Migrations",
+        "## Testing And CI",
         "## Benchmarks",
-        "## Roadmap",
+        "## Screenshots",
         "## Contributing",
         "## License",
     ]
     for section in required_sections:
         assert section in text
 
-    assert "authorized asset inventory and defensive/security testing" in text.lower()
+    lowered = text.lower()
+    assert "authorized asset inventory" in lowered
+    assert "defensive testing" in lowered
 
 
 def test_readme_mentions_all_migration_files() -> None:
