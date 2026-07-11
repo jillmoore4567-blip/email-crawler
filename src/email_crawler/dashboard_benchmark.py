@@ -10,6 +10,40 @@ RENDER_ROW_LIMIT = 2000
 THRESHOLD_MS = 200.0
 
 
+def _as_int(value: object, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    return default
+
+
+def _as_float(value: object, default: float = 0.0) -> float:
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return default
+    return default
+
+
+def _as_str_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    return []
+
+
 @dataclass(frozen=True)
 class DashboardBenchmarkResult:
     rows: int
@@ -203,20 +237,24 @@ def _filter_operation(dataset: dict[str, list[dict[str, object]]]) -> None:
         for row in dataset["page_rows"]
         if row.get("seed") == seed
         and row.get("domain") == domain
-        and any(t in types for t in list(row.get("finding_types", [])))
-        and from_ts <= int(row.get("timestamp_ms", 0)) <= to_ts
+        and any(t in types for t in _as_str_list(row.get("finding_types", [])))
+        and from_ts <= _as_int(row.get("timestamp_ms", 0)) <= to_ts
     ]
 
     _ = [
         row
         for row in dataset["email_rows"]
-        if row.get("seed") == seed and row.get("domain") == domain and from_ts <= int(row.get("timestamp_ms", 0)) <= to_ts
+        if row.get("seed") == seed
+        and row.get("domain") == domain
+        and from_ts <= _as_int(row.get("timestamp_ms", 0)) <= to_ts
     ]
 
     _ = [
         row
         for row in dataset["document_rows"]
-        if row.get("seed") == seed and row.get("domain") == domain and from_ts <= int(row.get("timestamp_ms", 0)) <= to_ts
+        if row.get("seed") == seed
+        and row.get("domain") == domain
+        and from_ts <= _as_int(row.get("timestamp_ms", 0)) <= to_ts
     ]
 
     _ = [
@@ -225,15 +263,15 @@ def _filter_operation(dataset: dict[str, list[dict[str, object]]]) -> None:
         if row.get("seed") == seed
         and row.get("domain") == domain
         and row.get("type") in types
-        and from_ts <= int(row.get("timestamp_ms", 0)) <= to_ts
+        and from_ts <= _as_int(row.get("timestamp_ms", 0)) <= to_ts
     ]
 
 
 def _sort_operation(dataset: dict[str, list[dict[str, object]]]) -> None:
-    _ = sorted(dataset["page_rows"], key=lambda row: (str(row.get("title", "")), int(row.get("timestamp_ms", 0))))
+    _ = sorted(dataset["page_rows"], key=lambda row: (str(row.get("title", "")), _as_int(row.get("timestamp_ms", 0))))
     _ = sorted(dataset["email_rows"], key=lambda row: str(row.get("value", "")))
     _ = sorted(dataset["document_rows"], key=lambda row: str(row.get("value", "")))
-    _ = sorted(dataset["intelligence_rows"], key=lambda row: (str(row.get("type", "")), int(row.get("timestamp_ms", 0))))
+    _ = sorted(dataset["intelligence_rows"], key=lambda row: (str(row.get("type", "")), _as_int(row.get("timestamp_ms", 0))))
 
 
 def _graph_render_operation(dataset: dict[str, list[dict[str, object]]]) -> None:
@@ -242,7 +280,7 @@ def _graph_render_operation(dataset: dict[str, list[dict[str, object]]]) -> None
         for node in dataset["page_graph_nodes"]
         if node.get("seed") == "http://seed1.example.test/index.html"
         and node.get("domain") in {"site1.example.test", "site2.example.test", "site3.example.test"}
-        and int(node.get("depth", 0)) <= 4
+        and _as_int(node.get("depth", 0)) <= 4
         and node.get("change_type") in {"changed", "new", "unchanged"}
     ]
     nodes = nodes[:120]
@@ -267,14 +305,14 @@ def _graph_render_operation(dataset: dict[str, list[dict[str, object]]]) -> None
             continue
         src = by_url[source]
         tgt = by_url[target]
-        sfx = float(src.get("force_x", 0.0))
-        sfy = float(src.get("force_y", 0.0))
-        tfx = float(tgt.get("force_x", 0.0))
-        tfy = float(tgt.get("force_y", 0.0))
-        shx = float(src.get("hier_x", 0.0))
-        shy = float(src.get("hier_y", 0.0))
-        thx = float(tgt.get("hier_x", 0.0))
-        thy = float(tgt.get("hier_y", 0.0))
+        sfx = _as_float(src.get("force_x", 0.0))
+        sfy = _as_float(src.get("force_y", 0.0))
+        tfx = _as_float(tgt.get("force_x", 0.0))
+        tfy = _as_float(tgt.get("force_y", 0.0))
+        shx = _as_float(src.get("hier_x", 0.0))
+        shy = _as_float(src.get("hier_y", 0.0))
+        thx = _as_float(tgt.get("hier_x", 0.0))
+        thy = _as_float(tgt.get("hier_y", 0.0))
 
         if edge.get("edge_type") == "external":
             force_external_x.extend([sfx, tfx, None])
@@ -293,15 +331,15 @@ def _graph_render_operation(dataset: dict[str, list[dict[str, object]]]) -> None
         "hier_internal_edge_points": (hier_internal_x, hier_internal_y),
         "hier_external_edge_points": (hier_external_x, hier_external_y),
         "force_node_points": (
-            [float(node.get("force_x", 0.0)) for node in nodes],
-            [float(node.get("force_y", 0.0)) for node in nodes],
+            [_as_float(node.get("force_x", 0.0)) for node in nodes],
+            [_as_float(node.get("force_y", 0.0)) for node in nodes],
         ),
         "hier_node_points": (
-            [float(node.get("hier_x", 0.0)) for node in nodes],
-            [float(node.get("hier_y", 0.0)) for node in nodes],
+            [_as_float(node.get("hier_x", 0.0)) for node in nodes],
+            [_as_float(node.get("hier_y", 0.0)) for node in nodes],
         ),
-        "node_sizes": [float(node.get("size", 12.0)) for node in nodes],
-        "node_depths": [int(node.get("depth", 0)) for node in nodes],
+        "node_sizes": [_as_float(node.get("size", 12.0), 12.0) for node in nodes],
+        "node_depths": [_as_int(node.get("depth", 0)) for node in nodes],
         "node_colors": [str(node.get("change_type", "unchanged")) for node in nodes],
     }
 

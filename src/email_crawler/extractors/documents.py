@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Callable
 from urllib.parse import urljoin, urlsplit
 
 from bs4 import BeautifulSoup
@@ -19,13 +20,14 @@ DOC_EXTENSIONS = {
 
 
 class DocumentExtractor:
-    def __init__(self, canonicalize_url):
+    def __init__(self, canonicalize_url: Callable[[str], str]) -> None:
         self._canonicalize_url = canonicalize_url
 
     def extract(self, page_url: str, soup: BeautifulSoup, *, context: ExtractionContext) -> dict:
         docs: set[str] = set()
         for anchor in soup.find_all("a", href=True):
-            href = anchor["href"].strip()
+            raw_href = anchor.get("href")
+            href = raw_href.strip() if isinstance(raw_href, str) else ""
             if not href or href.startswith("#"):
                 continue
 

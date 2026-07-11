@@ -8,7 +8,7 @@ import ssl
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 from urllib.parse import urljoin, urlsplit
 
 import aiohttp
@@ -176,10 +176,19 @@ class IntelligenceCollector:
             if homepage_text:
                 soup = BeautifulSoup(homepage_text, "html.parser")
                 for link in soup.find_all("link", href=True):
-                    rel = " ".join(link.get("rel") or []).lower()
-                    type_attr = (link.get("type") or "").lower()
+                    rel_raw = link.get("rel")
+                    if isinstance(rel_raw, list):
+                        rel = " ".join(str(item) for item in rel_raw).lower()
+                    elif isinstance(rel_raw, str):
+                        rel = rel_raw.lower()
+                    else:
+                        rel = ""
+                    type_raw = link.get("type")
+                    type_attr = type_raw.lower() if isinstance(type_raw, str) else ""
                     if "alternate" in rel and ("rss" in type_attr or "atom" in type_attr or "xml" in type_attr):
-                        feed_candidates.add(self._canonicalize_url(urljoin(seed_url, link["href"])))
+                        href_raw = link.get("href")
+                        if isinstance(href_raw, str):
+                            feed_candidates.add(self._canonicalize_url(urljoin(seed_url, href_raw)))
 
             for feed_url in sorted(feed_candidates):
                 if obey_robots and not await can_fetch(feed_url):
@@ -397,17 +406,43 @@ class IntelligenceCollector:
         except OSError:
             return {"host": host, "port": port}, "error"
 
-        subject = dict(x[0] for x in cert.get("subject", [])) if cert.get("subject") else {}
-        issuer = dict(x[0] for x in cert.get("issuer", [])) if cert.get("issuer") else {}
-        san_entries = [value for key, value in cert.get("subjectAltName", []) if key == "DNS"]
+        cert_map: dict[str, Any] = cert if isinstance(cert, dict) else {}
+
+        def _name_entries(key: str) -> dict[str, str]:
+            values = cert_map.get(key)
+            if not isinstance(values, tuple):
+                return {}
+            result: dict[str, str] = {}
+            for group in values:
+                if not isinstance(group, tuple):
+                    continue
+                for item in group:
+                    if not (isinstance(item, tuple) and len(item) == 2):
+                        continue
+                    k, v = item
+                    if isinstance(k, str) and isinstance(v, str):
+                        result[k] = v
+            return result
+
+        subject = _name_entries("subject")
+        issuer = _name_entries("issuer")
+        san_raw = cert_map.get("subjectAltName")
+        san_entries: list[str] = []
+        if isinstance(san_raw, tuple):
+            for item in san_raw:
+                if not (isinstance(item, tuple) and len(item) == 2):
+                    continue
+                san_key, san_value = item
+                if san_key == "DNS" and isinstance(san_value, str):
+                    san_entries.append(san_value)
 
         details = {
             "host": host,
             "port": port,
             "subject_common_name": subject.get("commonName", ""),
             "issuer_common_name": issuer.get("commonName", ""),
-            "not_before": cert.get("notBefore", ""),
-            "not_after": cert.get("notAfter", ""),
+            "not_before": str(cert_map.get("notBefore", "")),
+            "not_after": str(cert_map.get("notAfter", "")),
             "san_dns": san_entries[:100],
         }
         return details, "ok"
@@ -445,7 +480,7 @@ class IntelligenceCollector:
 
     async def _capture_screenshot(self, url: str, screenshot_dir: str) -> tuple[str | None, str]:
         try:
-            from playwright.async_api import async_playwright
+            from playwright.async_api import async_playwright  # type: ignore[import-not-found]
         except ImportError:
             return None, "dependency_missing"
 
