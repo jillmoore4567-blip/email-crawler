@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 
 
 class DNSExtractor:
-    def __init__(self):
+    def __init__(self) -> None:
         self._cache: dict[str, list[str]] = {}
 
     def resolve_host(self, url: str) -> list[str]:

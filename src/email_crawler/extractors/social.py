@@ -4,7 +4,7 @@ from urllib.parse import urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 
-from .base import ExtractionContext
+from .base import CanonicalizeUrl, ExtractionContext, attribute_text
 
 SOCIAL_DOMAINS = {
     "linkedin.com",
@@ -19,13 +19,13 @@ SOCIAL_DOMAINS = {
 
 
 class SocialExtractor:
-    def __init__(self, canonicalize_url):
+    def __init__(self, canonicalize_url: CanonicalizeUrl) -> None:
         self._canonicalize_url = canonicalize_url
 
     def extract(self, page_url: str, soup: BeautifulSoup, *, context: ExtractionContext) -> dict:
         profiles: set[str] = set()
         for anchor in soup.find_all("a", href=True):
-            href = anchor["href"].strip()
+            href = attribute_text(anchor.get("href")).strip()
             if not href or href.startswith("#"):
                 continue
 

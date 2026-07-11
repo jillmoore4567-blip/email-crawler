@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from bs4 import BeautifulSoup
 
-from .base import ExtractionContext
+from .base import ExtractionContext, attribute_text
 
 
 class MetadataExtractor:
@@ -13,12 +13,12 @@ class MetadataExtractor:
         description = ""
         description_tag = soup.find("meta", attrs={"name": "description"})
         if description_tag:
-            description = (description_tag.get("content") or "").strip()
+            description = attribute_text(description_tag.get("content")).strip()
 
         keywords: list[str] = []
         keywords_tag = soup.find("meta", attrs={"name": "keywords"})
         if keywords_tag:
-            raw = (keywords_tag.get("content") or "").strip()
+            raw = attribute_text(keywords_tag.get("content")).strip()
             if raw:
                 keywords = [item.strip() for item in raw.split(",") if item.strip()]
 
