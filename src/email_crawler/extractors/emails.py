@@ -20,6 +20,8 @@ class EmailExtractor:
 
         for anchor in soup.find_all("a", href=True):
             href = attribute_text(anchor.get("href")).strip()
+            raw_href = anchor.get("href")
+            href = raw_href.strip() if isinstance(raw_href, str) else ""
             if href.lower().startswith("mailto:"):
                 mail_target = unquote(href.split(":", 1)[1]).split("?", 1)[0]
                 normalized = self._normalize_email(mail_target)
