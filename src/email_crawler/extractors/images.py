@@ -5,10 +5,11 @@ from urllib.parse import urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 
-from .base import ExtractionContext
+from .base import CanonicalizeUrl, ExtractionContext, attribute_text
 
 
 class ImageExtractor:
+    def __init__(self, canonicalize_url: CanonicalizeUrl) -> None:
     def __init__(self, canonicalize_url: Callable[[str], str]) -> None:
         self._canonicalize_url = canonicalize_url
 
@@ -16,6 +17,7 @@ class ImageExtractor:
         images: set[str] = set()
 
         for image in soup.find_all("img"):
+            src = attribute_text(image.get("src")).strip()
             raw_src = image.get("src")
             src = raw_src.strip() if isinstance(raw_src, str) else ""
             if not src:

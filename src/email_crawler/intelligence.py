@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import re
 import socket
@@ -13,6 +14,8 @@ from urllib.parse import urljoin, urlsplit
 
 import aiohttp
 from bs4 import BeautifulSoup
+
+from .extractors.base import CanonicalizeUrl, attribute_text
 
 
 @dataclass(slots=True)
@@ -41,7 +44,7 @@ class IntelligenceFinding:
 
 
 class IntelligenceCollector:
-    def __init__(self, canonicalize_url: Callable[[str], str]):
+    def __init__(self, canonicalize_url: CanonicalizeUrl):
         self._canonicalize_url = canonicalize_url
 
     async def collect(
@@ -176,6 +179,11 @@ class IntelligenceCollector:
             if homepage_text:
                 soup = BeautifulSoup(homepage_text, "html.parser")
                 for link in soup.find_all("link", href=True):
+                    rel = attribute_text(link.get("rel")).lower()
+                    type_attr = attribute_text(link.get("type")).lower()
+                    href = attribute_text(link.get("href")).strip()
+                    if href and "alternate" in rel and ("rss" in type_attr or "atom" in type_attr or "xml" in type_attr):
+                        feed_candidates.add(self._canonicalize_url(urljoin(seed_url, href)))
                     rel_raw = link.get("rel")
                     if isinstance(rel_raw, list):
                         rel = " ".join(str(item) for item in rel_raw).lower()
@@ -406,6 +414,10 @@ class IntelligenceCollector:
         except OSError:
             return {"host": host, "port": port}, "error"
 
+        cert_data = cert if isinstance(cert, dict) else {}
+        subject = dict(self._tls_name_entries(cert_data.get("subject")))
+        issuer = dict(self._tls_name_entries(cert_data.get("issuer")))
+        san_entries = self._tls_subject_alt_names(cert_data.get("subjectAltName"))
         cert_map: dict[str, Any] = cert if isinstance(cert, dict) else {}
 
         def _name_entries(key: str) -> dict[str, str]:
@@ -441,6 +453,8 @@ class IntelligenceCollector:
             "port": port,
             "subject_common_name": subject.get("commonName", ""),
             "issuer_common_name": issuer.get("commonName", ""),
+            "not_before": str(cert_data.get("notBefore", "")),
+            "not_after": str(cert_data.get("notAfter", "")),
             "not_before": str(cert_map.get("notBefore", "")),
             "not_after": str(cert_map.get("notAfter", "")),
             "san_dns": san_entries[:100],
@@ -480,9 +494,12 @@ class IntelligenceCollector:
 
     async def _capture_screenshot(self, url: str, screenshot_dir: str) -> tuple[str | None, str]:
         try:
+            playwright_async_api = importlib.import_module("playwright.async_api")
+        except ModuleNotFoundError:
             from playwright.async_api import async_playwright  # type: ignore[import-not-found]
         except ImportError:
             return None, "dependency_missing"
+        async_playwright = playwright_async_api.async_playwright
 
         parsed = urlsplit(url)
         host = (parsed.hostname or "site").replace(".", "_")
@@ -501,6 +518,38 @@ class IntelligenceCollector:
             return None, "error"
 
         return str(out_path), "ok"
+
+    def _tls_name_entries(self, value: object) -> list[tuple[str, str]]:
+        entries: list[tuple[str, str]] = []
+        if not isinstance(value, tuple):
+            return entries
+        for item in value:
+            if not isinstance(item, tuple):
+                continue
+            for pair in item:
+                if (
+                    isinstance(pair, tuple)
+                    and len(pair) == 2
+                    and isinstance(pair[0], str)
+                    and isinstance(pair[1], str)
+                ):
+                    entries.append((pair[0], pair[1]))
+        return entries
+
+    def _tls_subject_alt_names(self, value: object) -> list[str]:
+        names: list[str] = []
+        if not isinstance(value, tuple):
+            return names
+        for item in value:
+            if (
+                isinstance(item, tuple)
+                and len(item) == 2
+                and isinstance(item[0], str)
+                and isinstance(item[1], str)
+                and item[0] == "DNS"
+            ):
+                names.append(item[1])
+        return names
 
     def _extract_security_headers(self, headers: dict[str, str]) -> dict[str, str]:
         if not headers:

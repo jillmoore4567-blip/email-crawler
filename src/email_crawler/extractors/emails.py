@@ -5,7 +5,7 @@ from urllib.parse import unquote
 
 from bs4 import BeautifulSoup
 
-from .base import ExtractionContext
+from .base import ExtractionContext, attribute_text
 
 EMAIL_RE = re.compile(
     r"(?<![A-Za-z0-9.!#$%&'*+/=?^_`{|}~-])"
@@ -19,6 +19,7 @@ class EmailExtractor:
         emails: set[str] = set()
 
         for anchor in soup.find_all("a", href=True):
+            href = attribute_text(anchor.get("href")).strip()
             raw_href = anchor.get("href")
             href = raw_href.strip() if isinstance(raw_href, str) else ""
             if href.lower().startswith("mailto:"):

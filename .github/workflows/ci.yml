@@ -63,7 +63,8 @@ jobs:
           . .venv_ci_release/bin/activate
           pip install --upgrade pip
           pip install dist/*.whl
-          email-crawler --help
+          email-crawler --config /tmp/email-crawler-ci-smoke-missing.yaml --help >/tmp/email-crawler-help.txt
+          test -s /tmp/email-crawler-help.txt
 
       - name: Benchmark synthetic site
         run: |

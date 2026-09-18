@@ -74,6 +74,46 @@ def _measure_ms(fn: Callable[[], None], *, iterations: int = 7) -> float:
     return round(median(samples), 3)
 
 
+def _object_list(value: object) -> list[object]:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return []
+
+
+def _str_list(value: object) -> list[str]:
+    return [item for item in _object_list(value) if isinstance(item, str)]
+
+
+def _int_value(value: object, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    return default
+
+
+def _float_value(value: object, default: float = 0.0) -> float:
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return default
+    return default
+
+
 def _generate_dataset(rows: int) -> dict[str, list[dict[str, object]]]:
     page_rows: list[dict[str, object]] = []
     email_rows: list[dict[str, object]] = []
@@ -237,6 +277,8 @@ def _filter_operation(dataset: dict[str, list[dict[str, object]]]) -> None:
         for row in dataset["page_rows"]
         if row.get("seed") == seed
         and row.get("domain") == domain
+        and any(t in types for t in _str_list(row.get("finding_types")))
+        and from_ts <= _int_value(row.get("timestamp_ms")) <= to_ts
         and any(t in types for t in _as_str_list(row.get("finding_types", [])))
         and from_ts <= _as_int(row.get("timestamp_ms", 0)) <= to_ts
     ]
@@ -244,6 +286,7 @@ def _filter_operation(dataset: dict[str, list[dict[str, object]]]) -> None:
     _ = [
         row
         for row in dataset["email_rows"]
+        if row.get("seed") == seed and row.get("domain") == domain and from_ts <= _int_value(row.get("timestamp_ms")) <= to_ts
         if row.get("seed") == seed
         and row.get("domain") == domain
         and from_ts <= _as_int(row.get("timestamp_ms", 0)) <= to_ts
@@ -252,6 +295,7 @@ def _filter_operation(dataset: dict[str, list[dict[str, object]]]) -> None:
     _ = [
         row
         for row in dataset["document_rows"]
+        if row.get("seed") == seed and row.get("domain") == domain and from_ts <= _int_value(row.get("timestamp_ms")) <= to_ts
         if row.get("seed") == seed
         and row.get("domain") == domain
         and from_ts <= _as_int(row.get("timestamp_ms", 0)) <= to_ts
@@ -263,11 +307,16 @@ def _filter_operation(dataset: dict[str, list[dict[str, object]]]) -> None:
         if row.get("seed") == seed
         and row.get("domain") == domain
         and row.get("type") in types
+        and from_ts <= _int_value(row.get("timestamp_ms")) <= to_ts
         and from_ts <= _as_int(row.get("timestamp_ms", 0)) <= to_ts
     ]
 
 
 def _sort_operation(dataset: dict[str, list[dict[str, object]]]) -> None:
+    _ = sorted(dataset["page_rows"], key=lambda row: (str(row.get("title", "")), _int_value(row.get("timestamp_ms"))))
+    _ = sorted(dataset["email_rows"], key=lambda row: str(row.get("value", "")))
+    _ = sorted(dataset["document_rows"], key=lambda row: str(row.get("value", "")))
+    _ = sorted(dataset["intelligence_rows"], key=lambda row: (str(row.get("type", "")), _int_value(row.get("timestamp_ms"))))
     _ = sorted(dataset["page_rows"], key=lambda row: (str(row.get("title", "")), _as_int(row.get("timestamp_ms", 0))))
     _ = sorted(dataset["email_rows"], key=lambda row: str(row.get("value", "")))
     _ = sorted(dataset["document_rows"], key=lambda row: str(row.get("value", "")))
@@ -280,6 +329,7 @@ def _graph_render_operation(dataset: dict[str, list[dict[str, object]]]) -> None
         for node in dataset["page_graph_nodes"]
         if node.get("seed") == "http://seed1.example.test/index.html"
         and node.get("domain") in {"site1.example.test", "site2.example.test", "site3.example.test"}
+        and _int_value(node.get("depth")) <= 4
         and _as_int(node.get("depth", 0)) <= 4
         and node.get("change_type") in {"changed", "new", "unchanged"}
     ]
@@ -305,6 +355,14 @@ def _graph_render_operation(dataset: dict[str, list[dict[str, object]]]) -> None
             continue
         src = by_url[source]
         tgt = by_url[target]
+        sfx = _float_value(src.get("force_x"))
+        sfy = _float_value(src.get("force_y"))
+        tfx = _float_value(tgt.get("force_x"))
+        tfy = _float_value(tgt.get("force_y"))
+        shx = _float_value(src.get("hier_x"))
+        shy = _float_value(src.get("hier_y"))
+        thx = _float_value(tgt.get("hier_x"))
+        thy = _float_value(tgt.get("hier_y"))
         sfx = _as_float(src.get("force_x", 0.0))
         sfy = _as_float(src.get("force_y", 0.0))
         tfx = _as_float(tgt.get("force_x", 0.0))
@@ -331,6 +389,15 @@ def _graph_render_operation(dataset: dict[str, list[dict[str, object]]]) -> None
         "hier_internal_edge_points": (hier_internal_x, hier_internal_y),
         "hier_external_edge_points": (hier_external_x, hier_external_y),
         "force_node_points": (
+            [_float_value(node.get("force_x")) for node in nodes],
+            [_float_value(node.get("force_y")) for node in nodes],
+        ),
+        "hier_node_points": (
+            [_float_value(node.get("hier_x")) for node in nodes],
+            [_float_value(node.get("hier_y")) for node in nodes],
+        ),
+        "node_sizes": [_float_value(node.get("size"), 12.0) for node in nodes],
+        "node_depths": [_int_value(node.get("depth")) for node in nodes],
             [_as_float(node.get("force_x", 0.0)) for node in nodes],
             [_as_float(node.get("force_y", 0.0)) for node in nodes],
         ),
