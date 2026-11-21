@@ -38,6 +38,7 @@ v1.2.0 advances the project from crawler output reporting to investigator-orient
 - Existing report output schemas remain compatible (`stats.json`, `snapshot_diff.json`).
 - Existing databases continue to migrate in-place through the migration chain.
 
+
 ## Artifacts
 
 - Source: GitHub repository main branch
