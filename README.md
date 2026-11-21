@@ -6,7 +6,6 @@
 [![CI](https://github.com/jillmoore4567-blip/email-crawler/actions/workflows/ci.yml/badge.svg)](https://github.com/jillmoore4567-blip/email-crawler/actions/workflows/ci.yml)
 [![Ruff](https://img.shields.io/badge/lint-ruff-informational.svg)](https://docs.astral.sh/ruff/)
 [![mypy](https://img.shields.io/badge/type%20check-mypy-informational.svg)](https://mypy.readthedocs.io/)
-[![Tests](https://img.shields.io/badge/tests-21%20passing-success.svg)](tests)
 <!-- markdownlint-enable MD013 -->
 
 A modular Python crawler for authorized asset inventory and security
@@ -60,7 +59,7 @@ pip install -e .
 ## Quick Start
 
 ```powershell
-email-crawler --seeds data/seeds.txt --max-pages 100 --max-depth 2 \
+email-crawler --seeds data/seeds.txt --max-pages 100 --max-depth 2 `
   --allow-domain example.com
 ```
 
@@ -75,21 +74,27 @@ python -m email_crawler --seeds data/seeds.txt
 To generate a standalone live monitor page and stream file:
 
 ```powershell
-python -m email_crawler.cli \
-  --seeds data/seeds.txt \
-  --out-live-stream output/crawl_live_stream.jsonl \
+python -m email_crawler `
+  --seeds data/seeds.txt `
+  --out-live-stream output/crawl_live_stream.jsonl `
   --out-live-monitor-html output/live_monitor.html
 ```
 
 To host the live monitor with WebSocket and API endpoints during a crawl:
 
 ```powershell
-python -m email_crawler.cli \
-  --seeds data/seeds.txt \
-  --serve-live-monitor \
-  --live-monitor-host 127.0.0.1 \
+python -m email_crawler `
+  --seeds data/seeds.txt `
+  --serve-live-monitor `
+  --live-monitor-host 127.0.0.1 `
   --live-monitor-port 8765
 ```
+
+
+The live-monitor API and WebSocket endpoints use bearer authentication
+when a token is configured. Send `Authorization: Bearer replace-with-a-secret`
+on HTTP requests; WebSocket clients may use the `Authorization` header or
+the `?token=replace-with-a-secret` query parameter.
 
 ## Configuration
 
@@ -103,6 +108,7 @@ Common options:
 - `--resume`, `--incremental`, `--checkpoint-dir`, `--checkpoint-every-pages`
 - `--out-stats`, `--out-snapshot-diff`, `--out-sqlite`, `--out-html`
 - `--out-live-stream`, `--out-live-monitor-html`, `--serve-live-monitor`
+- `--live-monitor-host`, `--live-monitor-port`, `--live-monitor-token`
 
 ## Reports And Outputs
 
@@ -164,15 +170,15 @@ python scripts/benchmark_synthetic.py
 Dashboard performance benchmark:
 
 ```powershell
-python scripts/benchmark_dashboard.py \
+python scripts/benchmark_dashboard.py `
   --output output/benchmarks/dashboard_latest.json
 ```
 
 Regression check:
 
 ```powershell
-python scripts/check_benchmark_regression.py \
-  --baseline benchmarks/baseline.json \
+python scripts/check_benchmark_regression.py `
+  --baseline benchmarks/baseline.json `
   --latest output/benchmarks/latest.json
 ```
 
