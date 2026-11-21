@@ -87,7 +87,8 @@ python -m email_crawler `
   --seeds data/seeds.txt `
   --serve-live-monitor `
   --live-monitor-host 127.0.0.1 `
-  --live-monitor-port 8765
+  --live-monitor-port 8765 `
+  --live-monitor-token replace-with-a-secret
 ```
 
 
@@ -109,7 +110,6 @@ Common options:
 - `--out-stats`, `--out-snapshot-diff`, `--out-sqlite`, `--out-html`
 - `--out-live-stream`, `--out-live-monitor-html`, `--serve-live-monitor`
 - `--live-monitor-host`, `--live-monitor-port`, `--live-monitor-token`
-  --live-monitor-token replace-with-a-secret
 
 ## Reports And Outputs
 
