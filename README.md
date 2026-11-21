@@ -109,6 +109,7 @@ Common options:
 - `--out-stats`, `--out-snapshot-diff`, `--out-sqlite`, `--out-html`
 - `--out-live-stream`, `--out-live-monitor-html`, `--serve-live-monitor`
 - `--live-monitor-host`, `--live-monitor-port`, `--live-monitor-token`
+  --live-monitor-token replace-with-a-secret
 
 ## Reports And Outputs
 
