@@ -36,7 +36,7 @@ v1.2.0 advances the project from crawler output reporting to investigator-orient
 
 - No crawler engine behavior changes were introduced for this release.
 - Existing report output schemas remain compatible (`stats.json`, `snapshot_diff.json`).
-- Existing databases continue to migrate in-place through the migration chain.
+- Existing databases migrate in-place through the ordered migration chain,
 - The latest SQLite schema version is 5.
 
 
